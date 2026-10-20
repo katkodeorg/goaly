@@ -30,12 +30,12 @@ export default function App() {
     <TooltipProvider>
       <div className="min-h-dvh bg-background text-foreground">
         <header className="sticky top-0 z-10 border-b bg-background/85 backdrop-blur">
-          <div className="mx-auto flex h-14 max-w-4xl items-center justify-between gap-4 px-4">
+          <div className="mx-auto flex h-14 max-w-4xl items-center justify-between gap-2 px-4 sm:gap-4">
             <div className="flex items-center gap-2.5">
               <span className="flex size-7 items-center justify-center rounded-md bg-foreground text-background">
                 <ListChecks className="size-4" />
               </span>
-              <span className="font-semibold tracking-tight">Goaly</span>
+              <span className="hidden font-semibold tracking-tight sm:inline">Goaly</span>
             </div>
             <Tabs value={view} onValueChange={(v) => setView(v as View)}>
               <TabsList>

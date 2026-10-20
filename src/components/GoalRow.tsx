@@ -44,82 +44,92 @@ export function GoalRow({ goal, date, today, api, onEdit, onDelete, compact }: P
     api.setEntry(goal.id, dateKey, value)
   }
 
+  const effortPicker = (size: 'sm' | 'md' | 'lg') => (
+    <EffortPicker
+      value={shown ? shown.value : null}
+      color={color}
+      muted={fromOtherDay}
+      onChange={handleEffort}
+      size={size}
+    />
+  )
+
+  const menu = onEdit && onDelete && (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon-sm" aria-label="Goal options" className="text-muted-foreground">
+          <MoreHorizontal />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={() => onEdit(goal)}>
+          <Pencil /> Edit
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => api.updateGoal(goal.id, { archived: !goal.archived })}>
+          {goal.archived ? (
+            <>
+              <ArchiveRestore /> Unarchive
+            </>
+          ) : (
+            <>
+              <Archive /> Archive
+            </>
+          )}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem variant="destructive" onSelect={() => onDelete(goal)}>
+          <Trash2 /> Delete
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+
+  // Effort goals on narrow screens get the picker on its own line under the title.
+  const stackPicker = goal.kind === 'effort' && !compact
+
   return (
-    <div
-      className={cn(
-        'group flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-muted/50',
-        compact ? 'py-1.5' : 'min-h-12',
-      )}
-    >
-      <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} aria-hidden />
-      <div className="min-w-0 flex-1">
-        <div className={cn('font-medium', compact ? 'line-clamp-2 text-sm leading-snug' : 'truncate text-[15px]', goal.archived && 'text-muted-foreground line-through')}>
-          {goal.title}
-        </div>
-        {!compact && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            {currentStreak > 1 && (
-              <span className="inline-flex items-center gap-1">
-                <Flame className="size-3" /> {currentStreak} {goal.cadence === 'daily' ? 'days' : goal.cadence === 'weekly' ? 'weeks' : 'months'}
-              </span>
-            )}
-            {fromOtherDay && shown && (
-              <span>
-                logged {format(fromKey(shown.date), 'EEE d')}
-                {goal.kind === 'effort' ? ` · ${shown.value}/10` : ''}
-              </span>
-            )}
+    <div className={cn('group rounded-lg transition-colors hover:bg-muted/50', compact ? 'px-2 py-1.5' : 'px-2 py-2')}>
+      <div className={cn('flex items-center gap-3', !compact && 'min-h-8')}>
+        <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} aria-hidden />
+        <div className="min-w-0 flex-1">
+          <div className={cn('font-medium', compact ? 'line-clamp-2 text-sm leading-snug' : 'truncate text-[15px]', goal.archived && 'text-muted-foreground line-through')}>
+            {goal.title}
           </div>
+          {!compact && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              {currentStreak > 1 && (
+                <span className="inline-flex items-center gap-1">
+                  <Flame className="size-3" /> {currentStreak} {goal.cadence === 'daily' ? 'days' : goal.cadence === 'weekly' ? 'weeks' : 'months'}
+                </span>
+              )}
+              {fromOtherDay && shown && (
+                <span>
+                  logged {format(fromKey(shown.date), 'EEE d')}
+                  {goal.kind === 'effort' ? ` · ${shown.value}/10` : ''}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {goal.kind === 'check' ? (
+          <CheckButton
+            checked={shown !== undefined}
+            color={color}
+            muted={fromOtherDay}
+            onChange={handleCheck}
+            label={`Mark "${goal.title}" done`}
+          />
+        ) : stackPicker ? (
+          <div className="hidden sm:block">{effortPicker('md')}</div>
+        ) : (
+          effortPicker('sm')
         )}
+
+        {menu}
       </div>
 
-      {goal.kind === 'check' ? (
-        <CheckButton
-          checked={shown !== undefined}
-          color={color}
-          muted={fromOtherDay}
-          onChange={handleCheck}
-          label={`Mark "${goal.title}" done`}
-        />
-      ) : (
-        <EffortPicker
-          value={shown ? shown.value : null}
-          color={color}
-          muted={fromOtherDay}
-          onChange={handleEffort}
-          size={compact ? 'sm' : 'md'}
-        />
-      )}
-
-      {onEdit && onDelete && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-sm" aria-label="Goal options" className="text-muted-foreground">
-              <MoreHorizontal />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={() => onEdit(goal)}>
-              <Pencil /> Edit
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => api.updateGoal(goal.id, { archived: !goal.archived })}>
-              {goal.archived ? (
-                <>
-                  <ArchiveRestore /> Unarchive
-                </>
-              ) : (
-                <>
-                  <Archive /> Archive
-                </>
-              )}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onSelect={() => onDelete(goal)}>
-              <Trash2 /> Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
+      {stackPicker && <div className="mt-2 flex justify-end pl-[22px] sm:hidden">{effortPicker('lg')}</div>}
     </div>
   )
 }

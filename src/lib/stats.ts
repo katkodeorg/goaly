@@ -44,3 +44,41 @@ export function daysSince(iso: string, today: Date): number {
 }
 
 export { addDays }
+
+export type SortMode = 'recent' | 'alpha' | 'newest'
+
+/**
+ * "Last used" date key for ordering: the most recent logged day *before* today, or the
+ * creation day if the goal has never been logged. Excluding today keeps rows from jumping
+ * around while you tick things off; the order refreshes with the next day.
+ */
+export function lastUsedKey(goal: Goal, todayKey: string, entries: Entry[]): string {
+  let best = ''
+  for (const e of entries) {
+    if (e.goalId === goal.id && e.date < todayKey && e.date > best) best = e.date
+  }
+  const created = toKey(new Date(goal.createdAt))
+  return best > created ? best : created
+}
+
+export function sortGoals(goals: Goal[], mode: SortMode, todayKey: string, entries: Entry[]): Goal[] {
+  const list = [...goals]
+  switch (mode) {
+    case 'alpha':
+      return list.sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }))
+    case 'newest':
+      return list.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    case 'recent': {
+      const key = new Map(goals.map((g) => [g.id, lastUsedKey(g, todayKey, entries)]))
+      return list.sort(
+        (a, b) => key.get(b.id)!.localeCompare(key.get(a.id)!) || b.createdAt.localeCompare(a.createdAt),
+      )
+    }
+  }
+}
+
+export function matchesQuery(goal: Goal, query: string): boolean {
+  const q = query.trim().toLowerCase()
+  if (!q) return true
+  return goal.title.toLowerCase().includes(q)
+}

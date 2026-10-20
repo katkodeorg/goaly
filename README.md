@@ -9,7 +9,9 @@ Live: https://katkodeorg.github.io/goaly/
 - **Daily, weekly and monthly goals.** Each section resets with its period: a weekly goal marked on Tuesday stays done until the week ends, then clears.
 - **Tick or effort.** Log a goal as done/not done, or as an effort level from 1 to 10.
 - **Calendar.** Coloured dots per goal on every day, or filter to one goal for a heatmap. Click any past day to log something you forgot.
+- **Search and ordering.** Search goals by name (press `/`), and sort by recently used, A to Z, or newest.
 - **Streaks** for consecutive periods, and progress per section.
+- **Works on phones.** Responsive layout with touch-sized controls.
 - **Backup and restore.** Export everything as JSON and restore it later (merge or replace).
 - **Local only.** All data is stored in `localStorage`. Nothing leaves your browser.
 - Light and dark mode.
