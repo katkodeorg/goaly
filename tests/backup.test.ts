@@ -76,3 +76,36 @@ test('merge lets incoming data win per goal-day and exercise-day', () => {
   assert.equal(merged.workouts.length, 1)
   assert.equal(merged.workouts[0].weight, 145)
 })
+
+test('routine is validated, defaults to every day, and merges by exercise', () => {
+  const store = parseBackup(
+    JSON.stringify({
+      version: 2,
+      goals: [],
+      entries: [],
+      exercises: [
+        { id: 'a', name: 'Squat', type: 'weight' },
+        { id: 'b', name: 'Push-up', type: 'bodyweight' },
+      ],
+      workouts: [{ id: 'w', date: '2026-11-06', exerciseId: 'a', reps: [], skipped: true }],
+      routine: [{ exerciseId: 'a', days: [5, 1, 9, 1] }, { exerciseId: 'b' }, { exerciseId: 'a' }, { exerciseId: 'gone' }],
+    }),
+  )
+  assert.deepEqual(store.routine, [
+    { exerciseId: 'a', days: [1, 5] },
+    { exerciseId: 'b', days: [0, 1, 2, 3, 4, 5, 6] },
+  ])
+  assert.equal(store.workouts[0].skipped, true)
+  assert.deepEqual(parseBackup(serializeBackup(store)), store)
+
+  const merged = mergeStores(store, { ...store, routine: [{ exerciseId: 'b', days: [0] }] })
+  assert.deepEqual(merged.routine.map((r) => r.exerciseId), ['a', 'b'])
+  assert.deepEqual(merged.routine[1].days, [0])
+})
+
+test('exercise library has unique names', async () => {
+  const { LIBRARY } = await import('../src/lib/library')
+  const names = LIBRARY.map((e) => e.name.toLowerCase())
+  assert.equal(new Set(names).size, names.length)
+  assert.ok(LIBRARY.length > 200)
+})

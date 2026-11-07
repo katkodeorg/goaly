@@ -1,7 +1,18 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef } from 'react'
 import { STORAGE_KEY, loadStore, mergeStores, newId, saveStore } from '@/lib/storage'
-import type { Cadence, ColorKey, Entry, Exercise, ExerciseType, Goal, GoalKind, Store, WorkoutLog } from '@/lib/types'
-import { defaultSetCount, previousLog } from '@/lib/workouts'
+import {
+  ALL_DAYS,
+  type Cadence,
+  type ColorKey,
+  type Entry,
+  type Exercise,
+  type ExerciseType,
+  type Goal,
+  type GoalKind,
+  type Store,
+  type WorkoutLog,
+} from '@/lib/types'
+import { draftLog } from '@/lib/workouts'
 
 export type GoalInput = { title: string; cadence: Cadence; kind: GoalKind; color: ColorKey }
 
@@ -17,6 +28,8 @@ type Action =
   | { type: 'addLogs'; logs: WorkoutLog[] }
   | { type: 'updateLog'; id: string; patch: Partial<Omit<WorkoutLog, 'id' | 'exerciseId' | 'date'>> }
   | { type: 'removeLog'; id: string }
+  | { type: 'setRoutine'; exerciseId: string; days: number[] | null }
+  | { type: 'moveRoutine'; exerciseId: string; delta: number }
   | { type: 'replace'; store: Store }
   | { type: 'merge'; store: Store }
 
@@ -67,11 +80,16 @@ function reducer(state: Store, action: Action): Store {
         ...state,
         exercises: state.exercises.filter((e) => e.id !== action.id),
         workouts: state.workouts.filter((w) => w.exerciseId !== action.id),
+        routine: state.routine.filter((r) => r.exerciseId !== action.id),
       }
     case 'addLogs': {
-      const taken = new Set(state.workouts.map((w) => `${w.exerciseId}:${w.date}`))
+      // A skipped placeholder gives way to a real log; any other existing log is kept.
+      const taken = new Set(state.workouts.filter((w) => !w.skipped).map((w) => `${w.exerciseId}:${w.date}`))
       const fresh = action.logs.filter((l) => !taken.has(`${l.exerciseId}:${l.date}`))
-      return fresh.length ? { ...state, workouts: [...state.workouts, ...fresh] } : state
+      if (!fresh.length) return state
+      const replaced = new Set(fresh.map((l) => `${l.exerciseId}:${l.date}`))
+      const kept = state.workouts.filter((w) => !replaced.has(`${w.exerciseId}:${w.date}`))
+      return { ...state, workouts: [...kept, ...fresh] }
     }
     case 'updateLog':
       return {
@@ -80,6 +98,25 @@ function reducer(state: Store, action: Action): Store {
       }
     case 'removeLog':
       return { ...state, workouts: state.workouts.filter((w) => w.id !== action.id) }
+    case 'setRoutine': {
+      const i = state.routine.findIndex((r) => r.exerciseId === action.exerciseId)
+      if (action.days === null) {
+        return i < 0 ? state : { ...state, routine: state.routine.filter((_, j) => j !== i) }
+      }
+      const item = { exerciseId: action.exerciseId, days: [...action.days].sort() }
+      const routine = [...state.routine]
+      if (i < 0) routine.push(item)
+      else routine[i] = item
+      return { ...state, routine }
+    }
+    case 'moveRoutine': {
+      const i = state.routine.findIndex((r) => r.exerciseId === action.exerciseId)
+      const j = i + action.delta
+      if (i < 0 || j < 0 || j >= state.routine.length) return state
+      const routine = [...state.routine]
+      ;[routine[i], routine[j]] = [routine[j], routine[i]]
+      return { ...state, routine }
+    }
     case 'replace':
       return action.store
     case 'merge':
@@ -156,28 +193,39 @@ export function useStore() {
       renameExercise: (id: string, name: string) => dispatch({ type: 'renameExercise', id, name: name.trim() }),
       deleteExercise: (id: string) => dispatch({ type: 'deleteExercise', id }),
       /**
-       * Adds an exercise to a day, prefilled from the last session: same weight and the same
-       * number of sets, with the reps left blank to tap in.
+       * Adds an exercise to a day, prefilled from the last session. `patch` is applied on top,
+       * which lets a routine card become a real log on its first tap.
        */
-      addLog: (date: string, exerciseId: string, type: ExerciseType) => {
+      addLog: (
+        date: string,
+        exerciseId: string,
+        type: ExerciseType,
+        patch?: Partial<Omit<WorkoutLog, 'id' | 'exerciseId' | 'date'>>,
+      ) => {
         const workouts = stateRef.current.workouts
-        if (workouts.some((w) => w.exerciseId === exerciseId && w.date === date)) return
-        const prev = previousLog(workouts, exerciseId, date)
-        const sets = prev && prev.reps.length ? prev.reps.length : defaultSetCount(type)
-        const log: WorkoutLog = {
-          id: newId(),
-          date,
-          exerciseId,
-          createdAt: new Date().toISOString(),
-          reps: Array.from({ length: sets }, () => null),
-          ...(type === 'weight' ? { weight: prev?.weight ?? 0 } : {}),
-        }
+        const existing = workouts.find((w) => w.exerciseId === exerciseId && w.date === date)
+        if (existing && !existing.skipped) return
+        const log = { ...draftLog(workouts, date, { id: exerciseId, type }, newId()), ...patch }
         dispatch({ type: 'addLogs', logs: [log] })
       },
+      /** Hides a routine exercise for one day. */
+      skipDay: (date: string, exerciseId: string) => {
+        const existing = stateRef.current.workouts.find((w) => w.exerciseId === exerciseId && w.date === date)
+        if (existing) dispatch({ type: 'removeLog', id: existing.id })
+        dispatch({
+          type: 'addLogs',
+          logs: [{ id: newId(), date, exerciseId, createdAt: new Date().toISOString(), reps: [], skipped: true }],
+        })
+      },
+      /** Adds the exercise to the routine (every day by default), or updates its days. */
+      setRoutineDays: (exerciseId: string, days: number[] = ALL_DAYS) =>
+        dispatch({ type: 'setRoutine', exerciseId, days }),
+      removeFromRoutine: (exerciseId: string) => dispatch({ type: 'setRoutine', exerciseId, days: null }),
+      moveRoutine: (exerciseId: string, delta: number) => dispatch({ type: 'moveRoutine', exerciseId, delta }),
       /** Copies the exercises (weights and set counts, blank reps) of one day onto another. */
       repeatDay: (from: string, to: string) => {
         const source = stateRef.current.workouts
-          .filter((w) => w.date === from)
+          .filter((w) => w.date === from && !w.skipped)
           .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
         const base = Date.now()
         const logs = source.map<WorkoutLog>((w, i) => ({

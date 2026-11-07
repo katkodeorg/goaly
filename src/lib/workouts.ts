@@ -1,39 +1,6 @@
-import type { Exercise, ExerciseType, WorkoutLog } from './types'
+import type { Exercise, ExerciseType, RoutineItem, WorkoutLog } from './types'
 
 export const WORKOUT_COLOR = '#0f766e'
-
-export const SUGGESTIONS: { name: string; type: ExerciseType }[] = [
-  { name: 'Bench press', type: 'weight' },
-  { name: 'Squat', type: 'weight' },
-  { name: 'Deadlift', type: 'weight' },
-  { name: 'Overhead press', type: 'weight' },
-  { name: 'Barbell row', type: 'weight' },
-  { name: 'Lat pulldown', type: 'weight' },
-  { name: 'Seated cable row', type: 'weight' },
-  { name: 'Leg press', type: 'weight' },
-  { name: 'Romanian deadlift', type: 'weight' },
-  { name: 'Incline dumbbell press', type: 'weight' },
-  { name: 'Dumbbell curl', type: 'weight' },
-  { name: 'Tricep pushdown', type: 'weight' },
-  { name: 'Lateral raise', type: 'weight' },
-  { name: 'Leg curl', type: 'weight' },
-  { name: 'Leg extension', type: 'weight' },
-  { name: 'Hip thrust', type: 'weight' },
-  { name: 'Calf raise', type: 'weight' },
-  { name: 'Pull-up', type: 'bodyweight' },
-  { name: 'Push-up', type: 'bodyweight' },
-  { name: 'Dip', type: 'bodyweight' },
-  { name: 'Sit-up', type: 'bodyweight' },
-  { name: 'Lunge', type: 'bodyweight' },
-  { name: 'Running', type: 'cardio' },
-  { name: 'Treadmill', type: 'cardio' },
-  { name: 'Cycling', type: 'cardio' },
-  { name: 'Rowing', type: 'cardio' },
-  { name: 'Walking', type: 'cardio' },
-  { name: 'Stair climber', type: 'cardio' },
-  { name: 'Elliptical', type: 'cardio' },
-  { name: 'Swimming', type: 'cardio' },
-]
 
 /** Highest rep count offered as a tap target. */
 export function maxReps(type: ExerciseType): number {
@@ -54,6 +21,7 @@ export function loggedReps(log: WorkoutLog): number[] {
 }
 
 export function hasData(log: WorkoutLog): boolean {
+  if (log.skipped) return false
   return loggedReps(log).length > 0 || (log.minutes ?? 0) > 0 || (log.miles ?? 0) > 0
 }
 
@@ -145,4 +113,27 @@ export function lastUsed(workouts: WorkoutLog[]): Map<string, string> {
     if (!prev || w.date > prev) m.set(w.exerciseId, w.date)
   }
   return m
+}
+
+/**
+ * A fresh log for this exercise on this day, prefilled from the last session: same weight and
+ * the same number of sets, with the reps left blank to tap in.
+ */
+export function draftLog(workouts: WorkoutLog[], date: string, exercise: Pick<Exercise, 'id' | 'type'>, id: string): WorkoutLog {
+  const prev = previousLog(workouts, exercise.id, date)
+  const sets = prev && prev.reps.length ? prev.reps.length : defaultSetCount(exercise.type)
+  return {
+    id,
+    date,
+    exerciseId: exercise.id,
+    createdAt: new Date().toISOString(),
+    reps: Array.from({ length: sets }, () => null),
+    ...(exercise.type === 'weight' ? { weight: prev?.weight ?? 0 } : {}),
+  }
+}
+
+/** Routine exercises scheduled for this date, in routine order. */
+export function scheduledFor(routine: RoutineItem[], date: Date): string[] {
+  const day = date.getDay()
+  return routine.filter((r) => r.days.includes(day)).map((r) => r.exerciseId)
 }

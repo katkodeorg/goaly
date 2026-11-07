@@ -1,5 +1,5 @@
 import { format } from 'date-fns'
-import { Copy, MoreHorizontal, Pencil, Plus, Trash2, Trophy, X } from 'lucide-react'
+import { Copy, MoreHorizontal, Pencil, Pin, PinOff, Plus, Trash2, Trophy, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -15,17 +15,23 @@ import { bestWeightBefore, formatLog, loggedReps, maxReps, previousLog } from '@
 import { RepPicker } from './RepPicker'
 import { SliderField } from './SliderField'
 
+type Patch = Partial<Omit<WorkoutLog, 'id' | 'exerciseId' | 'date'>>
+
 interface Props {
   log: WorkoutLog
   exercise: Exercise
   api: StoreApi
+  /** In the routine: removing it from the day skips it instead. */
+  inRoutine: boolean
+  onUpdate: (patch: Patch) => void
+  onRemove: () => void
   onRename: (exercise: Exercise) => void
   onDelete: (exercise: Exercise) => void
 }
 
 const MAX_SETS = 12
 
-export function ExerciseCard({ log, exercise, api, onRename, onDelete }: Props) {
+export function ExerciseCard({ log, exercise, api, inRoutine, onUpdate, onRemove, onRename, onDelete }: Props) {
   const workouts = api.store.workouts
   const prev = previousLog(workouts, exercise.id, log.date)
   const best = exercise.type === 'weight' ? bestWeightBefore(workouts, exercise.id, log.date) : 0
@@ -33,12 +39,12 @@ export function ExerciseCard({ log, exercise, api, onRename, onDelete }: Props) 
   const weightMax = Math.max(400, Math.ceil(((log.weight ?? 0) * 1.25) / 50) * 50)
 
   const setReps = (i: number, value: number | null) =>
-    api.updateLog(log.id, { reps: log.reps.map((r, j) => (j === i ? value : r)) })
-  const addSet = () => api.updateLog(log.id, { reps: [...log.reps, null] })
-  const removeSet = (i: number) => api.updateLog(log.id, { reps: log.reps.filter((_, j) => j !== i) })
+    onUpdate({ reps: log.reps.map((r, j) => (j === i ? value : r)) })
+  const addSet = () => onUpdate({ reps: [...log.reps, null] })
+  const removeSet = (i: number) => onUpdate({ reps: log.reps.filter((_, j) => j !== i) })
   const copyLast = () => {
     if (!prev) return
-    api.updateLog(log.id, { reps: [...prev.reps], weight: prev.weight, minutes: prev.minutes, miles: prev.miles })
+    onUpdate({ reps: [...prev.reps], weight: prev.weight, minutes: prev.minutes, miles: prev.miles })
   }
   const nothingLogged = loggedReps(log).length === 0 && !log.minutes && !log.miles
 
@@ -68,9 +74,14 @@ export function ExerciseCard({ log, exercise, api, onRename, onDelete }: Props) 
               <MoreHorizontal />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={() => api.removeLog(log.id)}>
-              <X /> Remove from this day
+          <DropdownMenuContent align="end" className="min-w-56">
+            <DropdownMenuItem onSelect={onRemove}>
+              <X /> {inRoutine ? 'Skip this day' : 'Remove from this day'}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => (inRoutine ? api.removeFromRoutine(exercise.id) : api.setRoutineDays(exercise.id))}
+            >
+              {inRoutine ? <PinOff /> : <Pin />} {inRoutine ? 'Remove from routine' : 'Add to routine (every day)'}
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => onRename(exercise)}>
               <Pencil /> Rename exercise
@@ -91,7 +102,7 @@ export function ExerciseCard({ log, exercise, api, onRename, onDelete }: Props) 
           max={weightMax}
           step={5}
           nudge={2.5}
-          onChange={(weight) => api.updateLog(log.id, { weight })}
+          onChange={(weight) => onUpdate({ weight })}
           badge={
             isPR ? (
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400">
@@ -112,7 +123,7 @@ export function ExerciseCard({ log, exercise, api, onRename, onDelete }: Props) 
             step={1}
             nudge={1}
             dp={0}
-            onChange={(minutes) => api.updateLog(log.id, { minutes })}
+            onChange={(minutes) => onUpdate({ minutes })}
           />
           <SliderField
             label="Distance"
@@ -121,7 +132,7 @@ export function ExerciseCard({ log, exercise, api, onRename, onDelete }: Props) 
             max={Math.max(15, Math.ceil(log.miles ?? 0))}
             step={0.1}
             nudge={0.1}
-            onChange={(miles) => api.updateLog(log.id, { miles })}
+            onChange={(miles) => onUpdate({ miles })}
           />
         </div>
       )}

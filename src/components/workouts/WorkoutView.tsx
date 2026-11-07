@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { addDays, format, isSameDay, subDays } from 'date-fns'
-import { ChevronLeft, ChevronRight, Dumbbell, Plus, Repeat } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Dumbbell, ListChecks, Plus, Repeat } from 'lucide-react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,10 +23,11 @@ import {
 import { Input } from '@/components/ui/input'
 import type { StoreApi } from '@/hooks/useStore'
 import { fromKey, toKey } from '@/lib/dates'
-import type { Exercise } from '@/lib/types'
-import { hasData, summarize, summaryText, workoutDays } from '@/lib/workouts'
+import type { Exercise, WorkoutLog } from '@/lib/types'
+import { draftLog, hasData, scheduledFor, summarize, summaryText, workoutDays } from '@/lib/workouts'
 import { AddExerciseDialog } from './AddExerciseDialog'
 import { ExerciseCard } from './ExerciseCard'
+import { RoutineDialog } from './RoutineDialog'
 
 interface Props {
   api: StoreApi
@@ -37,6 +38,7 @@ interface Props {
 
 export function WorkoutView({ api, today, date, onDateChange }: Props) {
   const [adding, setAdding] = useState(false)
+  const [editingRoutine, setEditingRoutine] = useState(false)
   const [renaming, setRenaming] = useState<Exercise | undefined>()
   const [deleting, setDeleting] = useState<Exercise | undefined>()
   const dateInput = useRef<HTMLInputElement>(null)
@@ -45,8 +47,40 @@ export function WorkoutView({ api, today, date, onDateChange }: Props) {
   const todayKey = toKey(today)
   const isToday = isSameDay(date, today)
   const exercises = new Map(api.store.exercises.map((e) => [e.id, e]))
-  const logs = (api.workoutsByDate.get(dateKey) ?? []).filter((l) => exercises.has(l.exerciseId))
+  const dayLogs = (api.workoutsByDate.get(dateKey) ?? []).filter((l) => exercises.has(l.exerciseId))
+  const logs = dayLogs.filter((l) => !l.skipped)
   const summary = summarize(logs, exercises)
+
+  // Routine exercises come first, in routine order. Ones not touched yet today are drafts that
+  // only get saved on the first tap, so browsing past days doesn't fill storage with empty logs.
+  const routineIds = new Set(api.store.routine.map((r) => r.exerciseId))
+  const byExercise = new Map(dayLogs.map((l) => [l.exerciseId, l]))
+  const scheduled = scheduledFor(api.store.routine, date).filter((id) => exercises.has(id))
+  const skipped = scheduled.filter((id) => byExercise.get(id)?.skipped)
+  const cards: { log: WorkoutLog; draft: boolean }[] = [
+    ...scheduled
+      .filter((id) => !byExercise.get(id)?.skipped)
+      .map((id) => {
+        const log = byExercise.get(id)
+        return log
+          ? { log, draft: false }
+          : { log: draftLog(api.store.workouts, dateKey, exercises.get(id)!, `draft:${id}`), draft: true }
+      }),
+    ...logs.filter((l) => !scheduled.includes(l.exerciseId)).map((log) => ({ log, draft: false })),
+  ]
+
+  const skippedLine = (ids: string[]) => (
+    <p className="px-1 text-center text-xs text-muted-foreground">
+      Skipped: {ids.map((id) => exercises.get(id)!.name).join(', ')} ·{' '}
+      <button
+        type="button"
+        className="font-medium text-foreground underline-offset-2 hover:underline"
+        onClick={() => ids.forEach((id) => api.removeLog(byExercise.get(id)!.id))}
+      >
+        Bring back
+      </button>
+    </p>
+  )
 
   const recent = workoutDays(api.store.workouts)
     .filter((d) => d !== dateKey)
@@ -95,21 +129,26 @@ export function WorkoutView({ api, today, date, onDateChange }: Props) {
             </Button>
           )}
         </div>
-        {logs.length > 0 && (
-          <Button onClick={() => setAdding(true)} className="max-sm:hidden">
-            <Plus /> Add exercise
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setEditingRoutine(true)}>
+            <ListChecks /> Routine
           </Button>
-        )}
+          {cards.length > 0 && (
+            <Button onClick={() => setAdding(true)} className="max-sm:hidden">
+              <Plus /> Add exercise
+            </Button>
+          )}
+        </div>
       </header>
 
       {/* Always rendered once there are cards, so logging the first set doesn't shift the layout under your finger. */}
-      {logs.length > 0 && (
+      {cards.length > 0 && (
         <p className="px-1 text-xs text-muted-foreground">
           {summary.exercises > 0 ? summaryText(summary) : 'Set the weight, then tap the reps for each set.'}
         </p>
       )}
 
-      {logs.length === 0 ? (
+      {cards.length === 0 ? (
         <div className="flex flex-col items-center gap-4 rounded-xl border border-dashed px-6 py-12 text-center">
           <div className="flex size-12 items-center justify-center rounded-full bg-muted">
             <Dumbbell className="size-6 text-muted-foreground" />
@@ -117,28 +156,42 @@ export function WorkoutView({ api, today, date, onDateChange }: Props) {
           <div className="space-y-1">
             <h2 className="text-lg font-semibold">{isToday ? 'No workout yet today' : 'No workout this day'}</h2>
             <p className="max-w-sm text-sm text-muted-foreground">
-              Add an exercise, set the weight, then tap the number of reps for each set.
+              Add an exercise, or set up a routine so your usual exercises are waiting here every day.
             </p>
           </div>
-          <Button onClick={() => setAdding(true)}>
-            <Plus /> Add exercise
-          </Button>
+          <div className="flex flex-wrap justify-center gap-2">
+            <Button onClick={() => setAdding(true)}>
+              <Plus /> Add exercise
+            </Button>
+            <Button variant="outline" onClick={() => setEditingRoutine(true)}>
+              <ListChecks /> Set up routine
+            </Button>
+          </div>
+          {skipped.length > 0 && skippedLine(skipped)}
         </div>
       ) : (
         <div className="space-y-3">
-          {logs.map((log) => (
-            <ExerciseCard
-              key={log.id}
-              log={log}
-              exercise={exercises.get(log.exerciseId)!}
-              api={api}
-              onRename={setRenaming}
-              onDelete={setDeleting}
-            />
-          ))}
+          {cards.map(({ log, draft }) => {
+            const ex = exercises.get(log.exerciseId)!
+            const inRoutine = routineIds.has(ex.id)
+            return (
+              <ExerciseCard
+                key={ex.id}
+                log={log}
+                exercise={ex}
+                api={api}
+                inRoutine={inRoutine}
+                onUpdate={(patch) => (draft ? api.addLog(dateKey, ex.id, ex.type, patch) : api.updateLog(log.id, patch))}
+                onRemove={() => (inRoutine ? api.skipDay(dateKey, ex.id) : api.removeLog(log.id))}
+                onRename={setRenaming}
+                onDelete={setDeleting}
+              />
+            )
+          })}
           <Button variant="outline" className="h-11 w-full border-dashed" onClick={() => setAdding(true)}>
             <Plus /> Add exercise
           </Button>
+          {skipped.length > 0 && skippedLine(skipped)}
         </div>
       )}
 
@@ -173,6 +226,8 @@ export function WorkoutView({ api, today, date, onDateChange }: Props) {
           </p>
         </section>
       )}
+
+      <RoutineDialog open={editingRoutine} onOpenChange={setEditingRoutine} api={api} />
 
       <AddExerciseDialog open={adding} onOpenChange={setAdding} api={api} date={dateKey} />
 

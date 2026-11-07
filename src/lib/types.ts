@@ -68,7 +68,17 @@ export interface WorkoutLog {
   reps: (number | null)[]
   minutes?: number
   miles?: number
+  /** Set when a routine exercise was skipped for this day, so it stops showing up. */
+  skipped?: boolean
 }
+
+/** An exercise that shows up automatically on the chosen weekdays (0 = Sunday … 6 = Saturday). */
+export interface RoutineItem {
+  exerciseId: string
+  days: number[]
+}
+
+export const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6]
 
 export interface Store {
   version: 2
@@ -76,9 +86,11 @@ export interface Store {
   entries: Entry[]
   exercises: Exercise[]
   workouts: WorkoutLog[]
+  /** Ordered list of exercises in the user's routine. */
+  routine: RoutineItem[]
 }
 
-export const EMPTY_STORE: Store = { version: 2, goals: [], entries: [], exercises: [], workouts: [] }
+export const EMPTY_STORE: Store = { version: 2, goals: [], entries: [], exercises: [], workouts: [], routine: [] }
 
 export const CADENCE_LABEL: Record<Cadence, string> = {
   daily: 'Daily',

@@ -1,4 +1,13 @@
-import { COLOR_KEYS, EMPTY_STORE, type Entry, type Exercise, type Goal, type Store, type WorkoutLog } from './types'
+import {
+  COLOR_KEYS,
+  EMPTY_STORE,
+  type Entry,
+  type Exercise,
+  type Goal,
+  type RoutineItem,
+  type Store,
+  type WorkoutLog,
+} from './types'
 
 export const STORAGE_KEY = 'goaly:v1'
 
@@ -77,7 +86,7 @@ function optNumber(v: unknown, max: number): number | undefined {
 
 function parseWorkout(v: unknown, exerciseIds: Set<string>): WorkoutLog | null {
   if (!isRecord(v)) throw new Error('Workout log is not an object')
-  const { id, date, exerciseId, createdAt, weight, reps, minutes, miles } = v
+  const { id, date, exerciseId, createdAt, weight, reps, minutes, miles, skipped } = v
   if (typeof exerciseId !== 'string' || !exerciseIds.has(exerciseId)) return null
   if (typeof id !== 'string' || !id) throw new Error('Workout log is missing an id')
   if (typeof date !== 'string' || !DATE_RE.test(date)) throw new Error(`Workout log has invalid date "${String(date)}"`)
@@ -97,6 +106,7 @@ function parseWorkout(v: unknown, exerciseIds: Set<string>): WorkoutLog | null {
   if (w !== undefined) log.weight = w
   if (m !== undefined) log.minutes = m
   if (mi !== undefined) log.miles = mi
+  if (skipped === true) log.skipped = true
   return log
 }
 
@@ -142,7 +152,23 @@ export function parseBackup(raw: string): Store {
     seenLogs.add(k)
     workouts.push(parsed)
   }
-  return { version: 2, goals, entries, exercises, workouts }
+  return { version: 2, goals, entries, exercises, workouts, routine: parseRoutine(data.routine, exerciseIds) }
+}
+
+function parseRoutine(v: unknown, exerciseIds: Set<string>): RoutineItem[] {
+  if (!Array.isArray(v)) return []
+  const seen = new Set<string>()
+  const out: RoutineItem[] = []
+  for (const item of v) {
+    if (!isRecord(item) || typeof item.exerciseId !== 'string') continue
+    if (!exerciseIds.has(item.exerciseId) || seen.has(item.exerciseId)) continue
+    seen.add(item.exerciseId)
+    const days = Array.isArray(item.days)
+      ? [...new Set(item.days.filter((d): d is number => Number.isInteger(d) && d >= 0 && d <= 6))].sort()
+      : [0, 1, 2, 3, 4, 5, 6]
+    out.push({ exerciseId: item.exerciseId, days })
+  }
+  return out
 }
 
 export function serializeBackup(store: Store): string {
@@ -176,12 +202,16 @@ export function mergeStores(current: Store, incoming: Store): Store {
   // One log per exercise per day; the incoming log wins.
   const workouts = new Map(current.workouts.map((w) => [`${w.exerciseId}:${w.date}`, w]))
   for (const w of incoming.workouts) workouts.set(`${w.exerciseId}:${w.date}`, w)
+  // Keep the current routine order; incoming items win on conflict, new ones go on the end.
+  const routine = new Map(current.routine.map((r) => [r.exerciseId, r]))
+  for (const r of incoming.routine) routine.set(r.exerciseId, r)
   return {
     version: 2,
     goals: [...goals.values()],
     entries: [...entries.values()],
     exercises: [...exercises.values()],
     workouts: [...workouts.values()],
+    routine: [...routine.values()],
   }
 }
 
