@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef } from 'react'
 import { STORAGE_KEY, loadStore, mergeStores, newId, saveStore } from '@/lib/storage'
 import {
-  ALL_DAYS,
   type Cadence,
   type ColorKey,
   type Entry,
@@ -9,10 +8,14 @@ import {
   type ExerciseType,
   type Goal,
   type GoalKind,
+  type Plan,
   type Store,
   type WorkoutLog,
 } from '@/lib/types'
 import { draftLog } from '@/lib/workouts'
+
+/** An exercise to put in a plan: an existing one by id, or a library/new one by name (created if missing). */
+export type PlanItem = { id: string; name: string; type: ExerciseType }
 
 export type GoalInput = { title: string; cadence: Cadence; kind: GoalKind; color: ColorKey }
 
@@ -28,8 +31,13 @@ type Action =
   | { type: 'addLogs'; logs: WorkoutLog[] }
   | { type: 'updateLog'; id: string; patch: Partial<Omit<WorkoutLog, 'id' | 'exerciseId' | 'date'>> }
   | { type: 'removeLog'; id: string }
-  | { type: 'setRoutine'; exerciseId: string; days: number[] | null }
-  | { type: 'moveRoutine'; exerciseId: string; delta: number }
+  | { type: 'addPlan'; plan: Plan }
+  | { type: 'updatePlan'; id: string; patch: Partial<Pick<Plan, 'name' | 'days'>> }
+  | { type: 'deletePlan'; id: string }
+  | { type: 'setDayPlans'; date: string; planIds: string[] }
+  | { type: 'addToPlan'; planId: string; items: PlanItem[] }
+  | { type: 'removeFromPlan'; planId: string; exerciseIds: string[] }
+  | { type: 'movePlanExercise'; planId: string; exerciseId: string; delta: number }
   | { type: 'replace'; store: Store }
   | { type: 'merge'; store: Store }
 
@@ -80,7 +88,7 @@ function reducer(state: Store, action: Action): Store {
         ...state,
         exercises: state.exercises.filter((e) => e.id !== action.id),
         workouts: state.workouts.filter((w) => w.exerciseId !== action.id),
-        routine: state.routine.filter((r) => r.exerciseId !== action.id),
+        plans: state.plans.map((p) => ({ ...p, exerciseIds: p.exerciseIds.filter((id) => id !== action.id) })),
       }
     case 'addLogs': {
       // A skipped placeholder gives way to a real log; any other existing log is kept.
@@ -98,25 +106,73 @@ function reducer(state: Store, action: Action): Store {
       }
     case 'removeLog':
       return { ...state, workouts: state.workouts.filter((w) => w.id !== action.id) }
-    case 'setRoutine': {
-      const i = state.routine.findIndex((r) => r.exerciseId === action.exerciseId)
-      if (action.days === null) {
-        return i < 0 ? state : { ...state, routine: state.routine.filter((_, j) => j !== i) }
+    case 'addPlan':
+      return { ...state, plans: [...state.plans, action.plan] }
+    case 'updatePlan':
+      return {
+        ...state,
+        plans: state.plans.map((p) =>
+          p.id === action.id
+            ? { ...p, ...action.patch, ...(action.patch.days ? { days: [...action.patch.days].sort() } : {}) }
+            : p,
+        ),
       }
-      const item = { exerciseId: action.exerciseId, days: [...action.days].sort() }
-      const routine = [...state.routine]
-      if (i < 0) routine.push(item)
-      else routine[i] = item
-      return { ...state, routine }
+    case 'deletePlan':
+      return {
+        ...state,
+        plans: state.plans.filter((p) => p.id !== action.id),
+        dayPlans: Object.fromEntries(
+          Object.entries(state.dayPlans).map(([d, ids]) => [d, ids.filter((id) => id !== action.id)]),
+        ),
+      }
+    case 'setDayPlans':
+      return { ...state, dayPlans: { ...state.dayPlans, [action.date]: [...new Set(action.planIds)] } }
+    case 'addToPlan': {
+      // Reuse an exercise with the same name if there is one; otherwise create it.
+      const byName = new Map(state.exercises.map((e) => [e.name.toLowerCase(), e.id]))
+      const byId = new Set(state.exercises.map((e) => e.id))
+      const created: Exercise[] = []
+      const ids: string[] = []
+      for (const item of action.items) {
+        let id = byId.has(item.id) ? item.id : byName.get(item.name.trim().toLowerCase())
+        if (!id) {
+          id = item.id
+          created.push({ id, name: item.name.trim(), type: item.type, createdAt: new Date().toISOString() })
+          byName.set(item.name.trim().toLowerCase(), id)
+          byId.add(id)
+        }
+        ids.push(id)
+      }
+      return {
+        ...state,
+        exercises: created.length ? [...state.exercises, ...created] : state.exercises,
+        plans: state.plans.map((p) =>
+          p.id === action.planId ? { ...p, exerciseIds: [...new Set([...p.exerciseIds, ...ids])] } : p,
+        ),
+      }
     }
-    case 'moveRoutine': {
-      const i = state.routine.findIndex((r) => r.exerciseId === action.exerciseId)
-      const j = i + action.delta
-      if (i < 0 || j < 0 || j >= state.routine.length) return state
-      const routine = [...state.routine]
-      ;[routine[i], routine[j]] = [routine[j], routine[i]]
-      return { ...state, routine }
+    case 'removeFromPlan': {
+      const drop = new Set(action.exerciseIds)
+      return {
+        ...state,
+        plans: state.plans.map((p) =>
+          p.id === action.planId ? { ...p, exerciseIds: p.exerciseIds.filter((id) => !drop.has(id)) } : p,
+        ),
+      }
     }
+    case 'movePlanExercise':
+      return {
+        ...state,
+        plans: state.plans.map((p) => {
+          if (p.id !== action.planId) return p
+          const i = p.exerciseIds.indexOf(action.exerciseId)
+          const j = i + action.delta
+          if (i < 0 || j < 0 || j >= p.exerciseIds.length) return p
+          const exerciseIds = [...p.exerciseIds]
+          ;[exerciseIds[i], exerciseIds[j]] = [exerciseIds[j], exerciseIds[i]]
+          return { ...p, exerciseIds }
+        }),
+      }
     case 'replace':
       return action.store
     case 'merge':
@@ -217,11 +273,21 @@ export function useStore() {
           logs: [{ id: newId(), date, exerciseId, createdAt: new Date().toISOString(), reps: [], skipped: true }],
         })
       },
-      /** Adds the exercise to the routine (every day by default), or updates its days. */
-      setRoutineDays: (exerciseId: string, days: number[] = ALL_DAYS) =>
-        dispatch({ type: 'setRoutine', exerciseId, days }),
-      removeFromRoutine: (exerciseId: string) => dispatch({ type: 'setRoutine', exerciseId, days: null }),
-      moveRoutine: (exerciseId: string, delta: number) => dispatch({ type: 'moveRoutine', exerciseId, delta }),
+      /** Creates a plan and returns its id. */
+      createPlan: (name: string, items: PlanItem[] = [], days: number[] = []) => {
+        const plan: Plan = { id: newId(), name: name.trim() || 'Workout', days, exerciseIds: [] }
+        dispatch({ type: 'addPlan', plan })
+        if (items.length) dispatch({ type: 'addToPlan', planId: plan.id, items })
+        return plan.id
+      },
+      updatePlan: (id: string, patch: Partial<Pick<Plan, 'name' | 'days'>>) => dispatch({ type: 'updatePlan', id, patch }),
+      deletePlan: (id: string) => dispatch({ type: 'deletePlan', id }),
+      addToPlan: (planId: string, items: PlanItem[]) => dispatch({ type: 'addToPlan', planId, items }),
+      removeFromPlan: (planId: string, exerciseIds: string[]) => dispatch({ type: 'removeFromPlan', planId, exerciseIds }),
+      movePlanExercise: (planId: string, exerciseId: string, delta: number) =>
+        dispatch({ type: 'movePlanExercise', planId, exerciseId, delta }),
+      /** Chooses the plans done on a date (overriding the weekday repeat for that date). */
+      setDayPlans: (date: string, planIds: string[]) => dispatch({ type: 'setDayPlans', date, planIds }),
       /** Copies the exercises (weights and set counts, blank reps) of one day onto another. */
       repeatDay: (from: string, to: string) => {
         const source = stateRef.current.workouts

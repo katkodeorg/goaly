@@ -8,6 +8,7 @@ import { fromKey } from '@/lib/dates'
 import { LIBRARY, MUSCLE_GROUPS, libraryGroup, type MuscleGroup } from '@/lib/library'
 import { EXERCISE_TYPE_LABEL, type ExerciseType } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { newId } from '@/lib/storage'
 import { lastUsed } from '@/lib/workouts'
 
 interface Props {
@@ -31,7 +32,7 @@ export function AddExerciseDialog({ open, onOpenChange, api, date }: Props) {
   )
 }
 
-type Mode = { kind: 'log'; date: string; onDone: () => void } | { kind: 'routine' }
+export type PickerMode = { kind: 'log'; date: string; onDone: () => void } | { kind: 'plan'; planId: string }
 
 type Row =
   | { kind: 'existing'; id: string; name: string; type: ExerciseType; group?: MuscleGroup; last?: string }
@@ -40,10 +41,10 @@ type Row =
 type GroupFilter = MuscleGroup | 'All' | 'Mine'
 
 /**
- * Searchable exercise list. In log mode a tap adds the exercise to the day and closes; in routine
- * mode a tap toggles it in the routine and the list stays open so several can be picked.
+ * Searchable exercise list. In log mode a tap adds the exercise to the day and closes; in plan
+ * mode a tap toggles it in the plan and the list stays open so several can be picked.
  */
-export function ExercisePicker({ api, mode }: { api: StoreApi; mode: Mode }) {
+export function ExercisePicker({ api, mode }: { api: StoreApi; mode: PickerMode }) {
   const [query, setQuery] = useState('')
   const [group, setGroup] = useState<GroupFilter>('All')
   const [newType, setNewType] = useState<ExerciseType>('weight')
@@ -58,7 +59,8 @@ export function ExercisePicker({ api, mode }: { api: StoreApi; mode: Mode }) {
       ),
     [api.workoutsByDate, mode],
   )
-  const inRoutine = useMemo(() => new Set(api.store.routine.map((r) => r.exerciseId)), [api.store.routine])
+  const plan = mode.kind === 'plan' ? api.store.plans.find((p) => p.id === mode.planId) : undefined
+  const inPlan = new Set(plan?.exerciseIds ?? [])
   const used = useMemo(() => lastUsed(api.store.workouts), [api.store.workouts])
   const names = useMemo(() => new Set(api.store.exercises.map((e) => e.name.toLowerCase())), [api.store.exercises])
 
@@ -78,29 +80,29 @@ export function ExercisePicker({ api, mode }: { api: StoreApi; mode: Mode }) {
   const exact = names.has(q) || LIBRARY.some((s) => s.name.toLowerCase() === q)
 
   const isSelected = (row: Row) =>
-    row.kind === 'existing' && (mode.kind === 'log' ? onDay.has(row.id) : inRoutine.has(row.id))
+    row.kind === 'existing' && (mode.kind === 'log' ? onDay.has(row.id) : inPlan.has(row.id))
 
-  const idFor = (row: Row) => (row.kind === 'existing' ? row.id : api.addExercise(row.name, row.type))
+  const item = (row: Row) => ({ id: row.kind === 'existing' ? row.id : newId(), name: row.name, type: row.type })
 
   const pick = (row: Row) => {
     if (mode.kind === 'log') {
       if (isSelected(row)) return
-      api.addLog(mode.date, idFor(row), row.type)
+      const id = row.kind === 'existing' ? row.id : api.addExercise(row.name, row.type)
+      api.addLog(mode.date, id, row.type)
       mode.onDone()
-    } else if (row.kind === 'existing' && inRoutine.has(row.id)) {
-      api.removeFromRoutine(row.id)
+    } else if (row.kind === 'existing' && inPlan.has(row.id)) {
+      api.removeFromPlan(mode.planId, [row.id])
     } else {
-      api.setRoutineDays(idFor(row))
+      api.addToPlan(mode.planId, [item(row)])
     }
   }
   const create = () => {
     if (!q) return
-    const id = api.addExercise(query, newType)
     if (mode.kind === 'log') {
-      api.addLog(mode.date, id, newType)
+      api.addLog(mode.date, api.addExercise(query, newType), newType)
       mode.onDone()
     } else {
-      api.setRoutineDays(id)
+      api.addToPlan(mode.planId, [{ id: newId(), name: query, type: newType }])
       setQuery('')
     }
   }
@@ -113,7 +115,7 @@ export function ExercisePicker({ api, mode }: { api: StoreApi; mode: Mode }) {
     const key = row.kind === 'existing' ? row.id : `lib:${row.name}`
     return (
       <button key={key} type="button" className={rowClass} onClick={() => pick(row)} disabled={mode.kind === 'log' && selected}>
-        {mode.kind === 'routine' && (
+        {mode.kind === 'plan' && (
           <span
             className={cn(
               'flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors',
@@ -211,6 +213,14 @@ export function ExercisePicker({ api, mode }: { api: StoreApi; mode: Mode }) {
           </div>
         )}
 
+        {mode.kind === 'plan' && group !== 'All' && group !== 'Mine' && (
+          <AddAll
+            rows={[...existing, ...library].filter((r) => !isSelected(r))}
+            label={group}
+            onAdd={(rows) => api.addToPlan(mode.planId, rows.map(item))}
+          />
+        )}
+
         {existing.length > 0 && <SectionLabel>Your exercises</SectionLabel>}
         {existing.map(renderRow)}
 
@@ -233,6 +243,19 @@ export function ExercisePicker({ api, mode }: { api: StoreApi; mode: Mode }) {
         )}
       </div>
     </div>
+  )
+}
+
+function AddAll({ rows, label, onAdd }: { rows: Row[]; label: string; onAdd: (rows: Row[]) => void }) {
+  if (!rows.length) return null
+  return (
+    <button
+      type="button"
+      onClick={() => onAdd(rows)}
+      className="mb-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-medium text-primary hover:bg-muted"
+    >
+      <Plus className="size-4" /> Add all {rows.length} {label.toLowerCase()} exercises
+    </button>
   )
 }
 

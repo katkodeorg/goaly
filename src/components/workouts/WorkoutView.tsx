@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { addDays, format, isSameDay, subDays } from 'date-fns'
-import { ChevronLeft, ChevronRight, Dumbbell, ListChecks, Plus, Repeat } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, ClipboardList, Dumbbell, Plus, Repeat, Settings2, X } from 'lucide-react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,6 +13,14 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -24,10 +32,10 @@ import { Input } from '@/components/ui/input'
 import type { StoreApi } from '@/hooks/useStore'
 import { fromKey, toKey } from '@/lib/dates'
 import type { Exercise, WorkoutLog } from '@/lib/types'
-import { draftLog, hasData, scheduledFor, summarize, summaryText, workoutDays } from '@/lib/workouts'
+import { draftLog, hasData, planExercises, plansFor, summarize, summaryText, workoutDays } from '@/lib/workouts'
 import { AddExerciseDialog } from './AddExerciseDialog'
 import { ExerciseCard } from './ExerciseCard'
-import { RoutineDialog } from './RoutineDialog'
+import { PlansDialog } from './PlansDialog'
 
 interface Props {
   api: StoreApi
@@ -38,7 +46,8 @@ interface Props {
 
 export function WorkoutView({ api, today, date, onDateChange }: Props) {
   const [adding, setAdding] = useState(false)
-  const [editingRoutine, setEditingRoutine] = useState(false)
+  // undefined: closed; '': plan list; 'new': new plan; otherwise a plan id to edit.
+  const [plansOpen, setPlansOpen] = useState<string | undefined>()
   const [renaming, setRenaming] = useState<Exercise | undefined>()
   const [deleting, setDeleting] = useState<Exercise | undefined>()
   const dateInput = useRef<HTMLInputElement>(null)
@@ -51,11 +60,14 @@ export function WorkoutView({ api, today, date, onDateChange }: Props) {
   const logs = dayLogs.filter((l) => !l.skipped)
   const summary = summarize(logs, exercises)
 
-  // Routine exercises come first, in routine order. Ones not touched yet today are drafts that
-  // only get saved on the first tap, so browsing past days doesn't fill storage with empty logs.
-  const routineIds = new Set(api.store.routine.map((r) => r.exerciseId))
+  // Exercises from the day's plans come first, in plan order. Ones not touched yet are drafts that
+  // only get saved on the first tap, so browsing days doesn't fill storage with empty logs.
+  // Skipping or adding exercises only changes this day; the plans stay as they are.
+  const dayPlans = plansFor(api.store.plans, api.store.dayPlans, date, dateKey)
+  const dayPlanIds = dayPlans.map((p) => p.id)
+  const setPlans = (ids: string[]) => api.setDayPlans(dateKey, ids)
   const byExercise = new Map(dayLogs.map((l) => [l.exerciseId, l]))
-  const scheduled = scheduledFor(api.store.routine, date).filter((id) => exercises.has(id))
+  const scheduled = planExercises(dayPlans).filter((id) => exercises.has(id))
   const skipped = scheduled.filter((id) => byExercise.get(id)?.skipped)
   const cards: { log: WorkoutLog; draft: boolean }[] = [
     ...scheduled
@@ -130,8 +142,8 @@ export function WorkoutView({ api, today, date, onDateChange }: Props) {
           )}
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setEditingRoutine(true)}>
-            <ListChecks /> Routine
+          <Button variant="outline" onClick={() => setPlansOpen('')}>
+            <ClipboardList /> Plans
           </Button>
           {cards.length > 0 && (
             <Button onClick={() => setAdding(true)} className="max-sm:hidden">
@@ -140,6 +152,59 @@ export function WorkoutView({ api, today, date, onDateChange }: Props) {
           )}
         </div>
       </header>
+
+      {api.store.plans.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {dayPlans.map((p) => (
+            <span
+              key={p.id}
+              className="inline-flex items-center rounded-full border border-primary/30 bg-primary/10 text-sm font-medium text-primary"
+            >
+              <button type="button" className="py-1 pl-3" onClick={() => setPlansOpen(p.id)} title="Edit plan">
+                {p.name}
+              </button>
+              <button
+                type="button"
+                aria-label={`Remove ${p.name} from this day`}
+                className="rounded-full p-1.5 hover:bg-primary/15"
+                onClick={() => setPlans(dayPlanIds.filter((id) => id !== p.id))}
+              >
+                <X className="size-3.5" />
+              </button>
+            </span>
+          ))}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="rounded-full text-muted-foreground">
+                <Plus /> {dayPlans.length ? 'Plan' : `Pick ${isToday ? "today's" : "this day's"} plan`}
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="min-w-56">
+              <DropdownMenuLabel className="text-xs text-muted-foreground">
+                Plans for {isToday ? 'today' : format(date, 'EEE d MMM')}
+              </DropdownMenuLabel>
+              {api.store.plans.map((p) => {
+                const on = dayPlanIds.includes(p.id)
+                return (
+                  <DropdownMenuItem
+                    key={p.id}
+                    onSelect={() => setPlans(on ? dayPlanIds.filter((id) => id !== p.id) : [...dayPlanIds, p.id])}
+                  >
+                    <Check className={on ? '' : 'opacity-0'} /> {p.name}
+                  </DropdownMenuItem>
+                )
+              })}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => setPlansOpen('new')}>
+                <Plus /> New plan
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setPlansOpen('')}>
+                <Settings2 /> Edit plans
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      )}
 
       {/* Always rendered once there are cards, so logging the first set doesn't shift the layout under your finger. */}
       {cards.length > 0 && (
@@ -156,15 +221,28 @@ export function WorkoutView({ api, today, date, onDateChange }: Props) {
           <div className="space-y-1">
             <h2 className="text-lg font-semibold">{isToday ? 'No workout yet today' : 'No workout this day'}</h2>
             <p className="max-w-sm text-sm text-muted-foreground">
-              Add an exercise, or set up a routine so your usual exercises are waiting here every day.
+              {api.store.plans.length
+                ? 'Pick a plan for the day, or add exercises one by one.'
+                : 'Make plans like Chest day or Leg day, then pick one each day. Or just add an exercise.'}
             </p>
           </div>
+          {api.store.plans.length > 0 && (
+            <div className="flex flex-wrap justify-center gap-2">
+              {api.store.plans.map((p) => (
+                <Button key={p.id} variant="outline" onClick={() => setPlans([...dayPlanIds, p.id])}>
+                  <ClipboardList /> {p.name}
+                </Button>
+              ))}
+            </div>
+          )}
           <div className="flex flex-wrap justify-center gap-2">
-            <Button onClick={() => setAdding(true)}>
+            {api.store.plans.length === 0 && (
+              <Button onClick={() => setPlansOpen('new')}>
+                <ClipboardList /> Make a plan
+              </Button>
+            )}
+            <Button variant={api.store.plans.length ? 'ghost' : 'outline'} onClick={() => setAdding(true)}>
               <Plus /> Add exercise
-            </Button>
-            <Button variant="outline" onClick={() => setEditingRoutine(true)}>
-              <ListChecks /> Set up routine
             </Button>
           </div>
           {skipped.length > 0 && skippedLine(skipped)}
@@ -173,16 +251,16 @@ export function WorkoutView({ api, today, date, onDateChange }: Props) {
         <div className="space-y-3">
           {cards.map(({ log, draft }) => {
             const ex = exercises.get(log.exerciseId)!
-            const inRoutine = routineIds.has(ex.id)
+            const inPlan = scheduled.includes(ex.id)
             return (
               <ExerciseCard
                 key={ex.id}
                 log={log}
                 exercise={ex}
                 api={api}
-                inRoutine={inRoutine}
+                inPlan={inPlan}
                 onUpdate={(patch) => (draft ? api.addLog(dateKey, ex.id, ex.type, patch) : api.updateLog(log.id, patch))}
-                onRemove={() => (inRoutine ? api.skipDay(dateKey, ex.id) : api.removeLog(log.id))}
+                onRemove={() => (inPlan ? api.skipDay(dateKey, ex.id) : api.removeLog(log.id))}
                 onRename={setRenaming}
                 onDelete={setDeleting}
               />
@@ -227,7 +305,13 @@ export function WorkoutView({ api, today, date, onDateChange }: Props) {
         </section>
       )}
 
-      <RoutineDialog open={editingRoutine} onOpenChange={setEditingRoutine} api={api} />
+      <PlansDialog
+        open={plansOpen !== undefined}
+        onOpenChange={(o) => !o && setPlansOpen(undefined)}
+        api={api}
+        start={plansOpen || undefined}
+        onCreated={(id) => plansOpen === 'new' && setPlans([...dayPlanIds, id])}
+      />
 
       <AddExerciseDialog open={adding} onOpenChange={setAdding} api={api} date={dateKey} />
 

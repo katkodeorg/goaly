@@ -1,5 +1,5 @@
 import { format } from 'date-fns'
-import { Copy, MoreHorizontal, Pencil, Pin, PinOff, Plus, Trash2, Trophy, X } from 'lucide-react'
+import { Copy, MoreHorizontal, Pencil, Plus, Trash2, Trophy, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -21,8 +21,8 @@ interface Props {
   log: WorkoutLog
   exercise: Exercise
   api: StoreApi
-  /** In the routine: removing it from the day skips it instead. */
-  inRoutine: boolean
+  /** Comes from a plan for this day: removing it skips it for the day and leaves the plan alone. */
+  inPlan: boolean
   onUpdate: (patch: Patch) => void
   onRemove: () => void
   onRename: (exercise: Exercise) => void
@@ -31,7 +31,7 @@ interface Props {
 
 const MAX_SETS = 12
 
-export function ExerciseCard({ log, exercise, api, inRoutine, onUpdate, onRemove, onRename, onDelete }: Props) {
+export function ExerciseCard({ log, exercise, api, inPlan, onUpdate, onRemove, onRename, onDelete }: Props) {
   const workouts = api.store.workouts
   const prev = previousLog(workouts, exercise.id, log.date)
   const best = exercise.type === 'weight' ? bestWeightBefore(workouts, exercise.id, log.date) : 0
@@ -76,12 +76,7 @@ export function ExerciseCard({ log, exercise, api, inRoutine, onUpdate, onRemove
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="min-w-56">
             <DropdownMenuItem onSelect={onRemove}>
-              <X /> {inRoutine ? 'Skip this day' : 'Remove from this day'}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onSelect={() => (inRoutine ? api.removeFromRoutine(exercise.id) : api.setRoutineDays(exercise.id))}
-            >
-              {inRoutine ? <PinOff /> : <Pin />} {inRoutine ? 'Remove from routine' : 'Add to routine (every day)'}
+              <X /> {inPlan ? 'Skip this day' : 'Remove from this day'}
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => onRename(exercise)}>
               <Pencil /> Rename exercise

@@ -77,7 +77,7 @@ test('merge lets incoming data win per goal-day and exercise-day', () => {
   assert.equal(merged.workouts[0].weight, 145)
 })
 
-test('routine is validated, defaults to every day, and merges by exercise', () => {
+test('plans and day picks are validated and round-trip', () => {
   const store = parseBackup(
     JSON.stringify({
       version: 2,
@@ -88,24 +88,58 @@ test('routine is validated, defaults to every day, and merges by exercise', () =
         { id: 'b', name: 'Push-up', type: 'bodyweight' },
       ],
       workouts: [{ id: 'w', date: '2026-11-06', exerciseId: 'a', reps: [], skipped: true }],
-      routine: [{ exerciseId: 'a', days: [5, 1, 9, 1] }, { exerciseId: 'b' }, { exerciseId: 'a' }, { exerciseId: 'gone' }],
+      plans: [
+        { id: 'p1', name: 'Leg day', days: [5, 1, 9, 1], exerciseIds: ['a', 'gone', 'a'] },
+        { id: 'p1', name: 'Duplicate', days: [], exerciseIds: [] },
+        { id: 'p2', name: '', exerciseIds: ['b'] },
+      ],
+      dayPlans: { '2026-11-06': ['p2', 'nope'], 'bad-date': ['p1'] },
     }),
   )
-  assert.deepEqual(store.routine, [
-    { exerciseId: 'a', days: [1, 5] },
-    { exerciseId: 'b', days: [0, 1, 2, 3, 4, 5, 6] },
+  assert.deepEqual(store.plans, [
+    { id: 'p1', name: 'Leg day', days: [1, 5], exerciseIds: ['a'] },
+    { id: 'p2', name: 'Workout', days: [], exerciseIds: ['b'] },
   ])
+  assert.deepEqual(store.dayPlans, { '2026-11-06': ['p2'] })
   assert.equal(store.workouts[0].skipped, true)
   assert.deepEqual(parseBackup(serializeBackup(store)), store)
 
-  const merged = mergeStores(store, { ...store, routine: [{ exerciseId: 'b', days: [0] }] })
-  assert.deepEqual(merged.routine.map((r) => r.exerciseId), ['a', 'b'])
-  assert.deepEqual(merged.routine[1].days, [0])
+  const merged = mergeStores(store, { ...store, plans: [{ id: 'p2', name: 'Push', days: [0], exerciseIds: [] }], dayPlans: {} })
+  assert.deepEqual(merged.plans.map((p) => p.name), ['Leg day', 'Push'])
+  assert.deepEqual(merged.dayPlans, store.dayPlans)
+})
+
+test('an old flat routine becomes plans grouped by days', () => {
+  const store = parseBackup(
+    JSON.stringify({
+      version: 2,
+      goals: [],
+      entries: [],
+      exercises: [
+        { id: 'a', name: 'Squat', type: 'weight' },
+        { id: 'b', name: 'Push-up', type: 'bodyweight' },
+        { id: 'c', name: 'Plank', type: 'bodyweight' },
+      ],
+      workouts: [],
+      routine: [{ exerciseId: 'a', days: [1, 4] }, { exerciseId: 'b' }, { exerciseId: 'c', days: [4, 1] }],
+    }),
+  )
+  assert.deepEqual(
+    store.plans.map((p) => [p.name, p.days, p.exerciseIds]),
+    [
+      ['My routine 1', [1, 4], ['a', 'c']],
+      ['My routine 2', [0, 1, 2, 3, 4, 5, 6], ['b']],
+    ],
+  )
 })
 
 test('exercise library has unique names', async () => {
-  const { LIBRARY } = await import('../src/lib/library')
+  const { LIBRARY, PRESETS, STAPLES, libraryEntry } = await import('../src/lib/library')
   const names = LIBRARY.map((e) => e.name.toLowerCase())
   assert.equal(new Set(names).size, names.length)
   assert.ok(LIBRARY.length > 200)
+  // Every preset and staple must point at a real library exercise.
+  for (const n of [...PRESETS.flatMap((p) => p.exercises), ...Object.values(STAPLES).flat()]) {
+    assert.ok(libraryEntry(n), n)
+  }
 })

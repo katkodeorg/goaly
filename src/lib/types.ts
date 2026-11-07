@@ -72,10 +72,15 @@ export interface WorkoutLog {
   skipped?: boolean
 }
 
-/** An exercise that shows up automatically on the chosen weekdays (0 = Sunday … 6 = Saturday). */
-export interface RoutineItem {
-  exerciseId: string
+/**
+ * A named workout, such as "Chest day". It is chosen per day, and can optionally repeat on
+ * weekdays (0 = Sunday … 6 = Saturday).
+ */
+export interface Plan {
+  id: string
+  name: string
   days: number[]
+  exerciseIds: string[]
 }
 
 export const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6]
@@ -86,11 +91,12 @@ export interface Store {
   entries: Entry[]
   exercises: Exercise[]
   workouts: WorkoutLog[]
-  /** Ordered list of exercises in the user's routine. */
-  routine: RoutineItem[]
+  plans: Plan[]
+  /** Plans chosen for a specific date (YYYY-MM-DD). Overrides the weekday repeat for that date. */
+  dayPlans: Record<string, string[]>
 }
 
-export const EMPTY_STORE: Store = { version: 2, goals: [], entries: [], exercises: [], workouts: [], routine: [] }
+export const EMPTY_STORE: Store = { version: 2, goals: [], entries: [], exercises: [], workouts: [], plans: [], dayPlans: {} }
 
 export const CADENCE_LABEL: Record<Cadence, string> = {
   daily: 'Daily',

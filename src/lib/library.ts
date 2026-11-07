@@ -276,3 +276,86 @@ const BY_NAME = new Map(LIBRARY.map((e) => [e.name.toLowerCase(), e]))
 export function libraryGroup(name: string): MuscleGroup | undefined {
   return BY_NAME.get(name.trim().toLowerCase())?.group
 }
+
+/** The go-to picks for each muscle, used when a whole muscle group is imported into a plan. */
+export const STAPLES: Record<MuscleGroup, string[]> = {
+  Chest: ['Bench press', 'Incline dumbbell press', 'Cable fly', 'Chest dip'],
+  Back: ['Pull-up', 'Barbell row', 'Lat pulldown', 'Seated cable row'],
+  Shoulders: ['Overhead press', 'Dumbbell shoulder press', 'Lateral raise', 'Face pull'],
+  Biceps: ['Barbell curl', 'Hammer curl', 'Incline dumbbell curl', 'Cable curl'],
+  Triceps: ['Tricep pushdown', 'Overhead dumbbell extension', 'Skull crusher', 'Tricep dip'],
+  Forearms: ['Wrist curl', 'Reverse wrist curl', "Farmer's carry", 'Dead hang'],
+  Quads: ['Squat', 'Leg press', 'Bulgarian split squat', 'Leg extension'],
+  Hamstrings: ['Romanian deadlift', 'Lying leg curl', 'Seated leg curl', 'Nordic curl'],
+  Glutes: ['Hip thrust', 'Cable kickback (glute)', 'Hip abduction machine', 'Glute bridge'],
+  Calves: ['Standing calf raise', 'Seated calf raise', 'Leg press calf raise'],
+  Core: ['Hanging leg raise', 'Cable crunch', 'Ab wheel rollout', 'Plank'],
+  'Full body': ['Power clean', 'Kettlebell swing', 'Burpee', 'Thruster'],
+  Cardio: ['Running', 'Cycling', 'Rowing', 'Stair climber'],
+  Mobility: ['Stretching', 'Yoga', 'Foam rolling'],
+}
+
+/** Ready-made workout days to start a plan from. */
+export const PRESETS: { name: string; exercises: string[] }[] = [
+  {
+    name: 'Chest day',
+    exercises: ['Bench press', 'Incline dumbbell press', 'Dumbbell fly', 'Cable fly', 'Machine chest press', 'Chest dip'],
+  },
+  {
+    name: 'Back day',
+    exercises: ['Deadlift', 'Pull-up', 'Barbell row', 'Lat pulldown', 'Seated cable row', 'Dumbbell shrug'],
+  },
+  {
+    name: 'Leg day',
+    exercises: ['Squat', 'Romanian deadlift', 'Leg press', 'Leg extension', 'Lying leg curl', 'Standing calf raise'],
+  },
+  {
+    name: 'Shoulder day',
+    exercises: ['Overhead press', 'Dumbbell shoulder press', 'Lateral raise', 'Rear delt fly', 'Face pull', 'Dumbbell shrug'],
+  },
+  {
+    name: 'Arm day',
+    exercises: ['Barbell curl', 'Hammer curl', 'Incline dumbbell curl', 'Tricep pushdown', 'Overhead dumbbell extension', 'Skull crusher'],
+  },
+  {
+    name: 'Push',
+    exercises: ['Bench press', 'Overhead press', 'Incline dumbbell press', 'Lateral raise', 'Tricep pushdown', 'Overhead cable extension'],
+  },
+  {
+    name: 'Pull',
+    exercises: ['Deadlift', 'Pull-up', 'Barbell row', 'Lat pulldown', 'Face pull', 'Hammer curl'],
+  },
+  {
+    name: 'Upper body',
+    exercises: ['Bench press', 'Barbell row', 'Overhead press', 'Lat pulldown', 'Dumbbell curl', 'Tricep pushdown'],
+  },
+  {
+    name: 'Lower body',
+    exercises: ['Squat', 'Romanian deadlift', 'Bulgarian split squat', 'Lying leg curl', 'Standing calf raise', 'Hanging leg raise'],
+  },
+  {
+    name: 'Full body',
+    exercises: ['Squat', 'Bench press', 'Barbell row', 'Overhead press', 'Romanian deadlift', 'Plank'],
+  },
+  {
+    name: 'Dumbbells only',
+    exercises: [
+      'Dumbbell bench press',
+      'Dumbbell row',
+      'Dumbbell shoulder press',
+      'Goblet squat',
+      'Dumbbell Romanian deadlift',
+      'Dumbbell curl',
+      'Overhead dumbbell extension',
+    ],
+  },
+  {
+    name: 'Core',
+    exercises: ['Hanging leg raise', 'Cable crunch', 'Ab wheel rollout', 'Russian twist', 'Plank', 'Dead bug'],
+  },
+  { name: 'Cardio', exercises: ['Running', 'Cycling', 'Rowing', 'Jump rope'] },
+]
+
+export function libraryEntry(name: string): LibraryExercise | undefined {
+  return BY_NAME.get(name.trim().toLowerCase())
+}

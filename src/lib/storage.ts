@@ -4,7 +4,7 @@ import {
   type Entry,
   type Exercise,
   type Goal,
-  type RoutineItem,
+  type Plan,
   type Store,
   type WorkoutLog,
 } from './types'
@@ -152,23 +152,64 @@ export function parseBackup(raw: string): Store {
     seenLogs.add(k)
     workouts.push(parsed)
   }
-  return { version: 2, goals, entries, exercises, workouts, routine: parseRoutine(data.routine, exerciseIds) }
+  const plans = parsePlans(data, exerciseIds)
+  return { version: 2, goals, entries, exercises, workouts, plans, dayPlans: parseDayPlans(data.dayPlans, new Set(plans.map((p) => p.id))) }
 }
 
-function parseRoutine(v: unknown, exerciseIds: Set<string>): RoutineItem[] {
+function parseDayPlans(v: unknown, planIds: Set<string>): Record<string, string[]> {
+  const out: Record<string, string[]> = {}
+  if (!isRecord(v)) return out
+  for (const [date, ids] of Object.entries(v)) {
+    if (!DATE_RE.test(date) || !Array.isArray(ids)) continue
+    out[date] = [...new Set(ids.filter((id): id is string => typeof id === 'string' && planIds.has(id)))]
+  }
+  return out
+}
+
+function parseDays(v: unknown): number[] {
   if (!Array.isArray(v)) return []
+  return [...new Set(v.filter((d): d is number => Number.isInteger(d) && d >= 0 && d <= 6))].sort()
+}
+
+function parsePlans(data: Record<string, unknown>, exerciseIds: Set<string>): Plan[] {
+  if (Array.isArray(data.plans)) {
+    const seen = new Set<string>()
+    const plans: Plan[] = []
+    for (const p of data.plans) {
+      if (!isRecord(p) || typeof p.id !== 'string' || !p.id || seen.has(p.id)) continue
+      seen.add(p.id)
+      const ids = Array.isArray(p.exerciseIds)
+        ? [...new Set(p.exerciseIds.filter((id): id is string => typeof id === 'string' && exerciseIds.has(id)))]
+        : []
+      plans.push({
+        id: p.id,
+        name: typeof p.name === 'string' && p.name.trim() ? p.name.slice(0, 60) : 'Workout',
+        days: parseDays(p.days),
+        exerciseIds: ids,
+      })
+    }
+    return plans
+  }
+  // Older data had one flat routine with days per exercise: turn each set of days into a plan.
+  if (!Array.isArray(data.routine)) return []
+  const byDays = new Map<string, Plan>()
   const seen = new Set<string>()
-  const out: RoutineItem[] = []
-  for (const item of v) {
+  for (const item of data.routine) {
     if (!isRecord(item) || typeof item.exerciseId !== 'string') continue
     if (!exerciseIds.has(item.exerciseId) || seen.has(item.exerciseId)) continue
     seen.add(item.exerciseId)
-    const days = Array.isArray(item.days)
-      ? [...new Set(item.days.filter((d): d is number => Number.isInteger(d) && d >= 0 && d <= 6))].sort()
-      : [0, 1, 2, 3, 4, 5, 6]
-    out.push({ exerciseId: item.exerciseId, days })
+    const days = Array.isArray(item.days) ? parseDays(item.days) : [0, 1, 2, 3, 4, 5, 6]
+    const key = days.join()
+    let plan = byDays.get(key)
+    if (!plan) {
+      plan = { id: `routine-${key || 'none'}`, name: 'My routine', days, exerciseIds: [] }
+      byDays.set(key, plan)
+    }
+    plan.exerciseIds.push(item.exerciseId)
   }
-  return out
+  const plans = [...byDays.values()]
+  if (plans.length > 1) plans.forEach((p, i) => (p.name = `My routine ${i + 1}`))
+  return plans
 }
 
 export function serializeBackup(store: Store): string {
@@ -202,16 +243,17 @@ export function mergeStores(current: Store, incoming: Store): Store {
   // One log per exercise per day; the incoming log wins.
   const workouts = new Map(current.workouts.map((w) => [`${w.exerciseId}:${w.date}`, w]))
   for (const w of incoming.workouts) workouts.set(`${w.exerciseId}:${w.date}`, w)
-  // Keep the current routine order; incoming items win on conflict, new ones go on the end.
-  const routine = new Map(current.routine.map((r) => [r.exerciseId, r]))
-  for (const r of incoming.routine) routine.set(r.exerciseId, r)
+  // Keep the current plan order; incoming plans win on conflict, new ones go on the end.
+  const plans = new Map(current.plans.map((p) => [p.id, p]))
+  for (const p of incoming.plans) plans.set(p.id, p)
   return {
     version: 2,
     goals: [...goals.values()],
     entries: [...entries.values()],
     exercises: [...exercises.values()],
     workouts: [...workouts.values()],
-    routine: [...routine.values()],
+    plans: [...plans.values()],
+    dayPlans: { ...current.dayPlans, ...incoming.dayPlans },
   }
 }
 

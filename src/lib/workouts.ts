@@ -1,4 +1,4 @@
-import type { Exercise, ExerciseType, RoutineItem, WorkoutLog } from './types'
+import type { Exercise, ExerciseType, Plan, WorkoutLog } from './types'
 
 export const WORKOUT_COLOR = '#0f766e'
 
@@ -132,8 +132,15 @@ export function draftLog(workouts: WorkoutLog[], date: string, exercise: Pick<Ex
   }
 }
 
-/** Routine exercises scheduled for this date, in routine order. */
-export function scheduledFor(routine: RoutineItem[], date: Date): string[] {
+/** Plans for a date: the ones picked for that date, or else the ones repeating on its weekday. */
+export function plansFor(plans: Plan[], dayPlans: Record<string, string[]>, date: Date, dateKey: string): Plan[] {
+  const picked = dayPlans[dateKey]
+  if (picked) return picked.map((id) => plans.find((p) => p.id === id)).filter((p): p is Plan => !!p)
   const day = date.getDay()
-  return routine.filter((r) => r.days.includes(day)).map((r) => r.exerciseId)
+  return plans.filter((p) => p.days.includes(day))
+}
+
+/** Exercise ids from these plans, in plan order, without repeats. */
+export function planExercises(plans: Plan[]): string[] {
+  return [...new Set(plans.flatMap((p) => p.exerciseIds))]
 }

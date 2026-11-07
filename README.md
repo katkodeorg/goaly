@@ -10,7 +10,7 @@ Live: https://katkodeorg.github.io/goaly/
 - **Tick or effort.** Log a goal as done/not done, or as an effort level from 1 to 10.
 - **Calendar.** Coloured dots per goal on every day, or filter to one goal for a heatmap. Click any past day to log something you forgot.
 - **Workouts.** Log exercises per day. Weights get a lb slider, prefilled from last time, and each set is a row of rep numbers: tap 10, 8, 8 and three sets are logged. Bodyweight exercises use reps only, cardio uses minutes and miles sliders. Shows last session, flags new weight PRs, and repeats a past workout in one tap.
-- **Exercise library and routine.** About 250 exercises grouped by muscle (barbell, dumbbell, cable, machine, kettlebell, bodyweight and cardio). Tick the ones you do into your routine and pick their weekdays; they appear on those days automatically, ready to tap in. Skip one for a day from its menu.
+- **Exercise library and plans.** About 250 exercises grouped by muscle (barbell, dumbbell, cable, machine, kettlebell, bodyweight and cardio). Make plans like Chest day or Leg day from a preset, by tapping the muscles you're hitting, or by picking exercises. Pick the plan(s) for each day, or set a plan to repeat on weekdays. Changes on a day (skip, add) only affect that day.
 - **Search and ordering.** Search goals by name (press `/`), and sort by recently used, A to Z, or newest.
 - **Streaks** for consecutive periods, and progress per section.
 - **Works on phones.** Responsive layout with touch-sized controls.
@@ -42,10 +42,11 @@ GitHub Pages serves the `docs/` folder on `main`. Run `npm run build`, commit th
   "entries": [{ "goalId": "…", "date": "2026-10-19", "value": 1 }],
   "exercises": [{ "id": "…", "name": "Bench press", "type": "weight", "createdAt": "…" }],
   "workouts": [{ "id": "…", "date": "2026-11-06", "exerciseId": "…", "createdAt": "…", "weight": 135, "reps": [10, 8, 8] }],
-  "routine": [{ "exerciseId": "…", "days": [1, 3, 5] }]
+  "plans": [{ "id": "…", "name": "Chest day", "days": [1, 4], "exerciseIds": ["…"] }],
+  "dayPlans": { "2026-11-06": ["…"] }
 }
 ```
 
-Exercise `type` is `weight`, `bodyweight` or `cardio`. Workout `weight` is in lb. Cardio logs use `minutes` and `miles`. `routine` is ordered; `days` are weekdays, 0 = Sunday. A log with `"skipped": true` hides a routine exercise for that day. Version 1 backups, from before workouts existed, and version 2 backups without `routine` still restore.
+Exercise `type` is `weight`, `bodyweight` or `cardio`. Workout `weight` is in lb. Cardio logs use `minutes` and `miles`. `plans` are ordered; `days` are weekdays the plan repeats on (0 = Sunday). `dayPlans` holds the plans picked for a date and overrides the repeat for that date. A log with `"skipped": true` hides a plan exercise for that day. Version 1 backups, and backups with the older flat `routine`, still restore.
 
 `cadence` is `daily`, `weekly` or `monthly`. `kind` is `check` (value is always 1) or `effort` (value 1–10).
