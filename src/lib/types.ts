@@ -64,6 +64,11 @@ export interface WorkoutLog {
   exerciseId: string
   createdAt: string
   weight?: number
+  /**
+   * Weight per set, for when it changes between sets (e.g. dropping as you tire). Same length as
+   * `reps`. When present, `weight` holds the heaviest set.
+   */
+  setWeights?: number[]
   /** Reps per set; null means the set hasn't been logged yet. */
   reps: (number | null)[]
   minutes?: number

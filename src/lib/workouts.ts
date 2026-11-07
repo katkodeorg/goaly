@@ -20,6 +20,30 @@ export function loggedReps(log: WorkoutLog): number[] {
   return log.reps.filter((r): r is number => r !== null && r > 0)
 }
 
+/** True when the sets use different weights. */
+export function hasSetWeights(log: WorkoutLog): boolean {
+  return !!log.setWeights && log.setWeights.some((w) => w !== log.setWeights![0])
+}
+
+/** Weight used for set `i`. */
+export function setWeight(log: WorkoutLog, i: number): number {
+  return log.setWeights?.[i] ?? log.weight ?? 0
+}
+
+/** [weight, reps] for each set that has reps logged. */
+export function loggedSets(log: WorkoutLog): [number, number][] {
+  const out: [number, number][] = []
+  log.reps.forEach((r, i) => {
+    if (r !== null && r > 0) out.push([setWeight(log, i), r])
+  })
+  return out
+}
+
+/** Heaviest weight lifted for at least one rep in this log. */
+export function topWeight(log: WorkoutLog): number {
+  return Math.max(0, ...loggedSets(log).map(([w]) => w))
+}
+
 export function hasData(log: WorkoutLog): boolean {
   if (log.skipped) return false
   return loggedReps(log).length > 0 || (log.minutes ?? 0) > 0 || (log.miles ?? 0) > 0
@@ -28,8 +52,12 @@ export function hasData(log: WorkoutLog): boolean {
 export function formatLog(log: WorkoutLog, type: ExerciseType): string {
   const reps = loggedReps(log)
   switch (type) {
-    case 'weight':
-      return `${fmt(log.weight ?? 0)} lb · ${reps.length ? reps.join(', ') : 'no sets'}`
+    case 'weight': {
+      if (!reps.length) return `${fmt(log.weight ?? 0)} lb · no sets`
+      if (!hasSetWeights(log)) return `${fmt(log.weight ?? 0)} lb · ${reps.join(', ')}`
+      const sets = loggedSets(log).map(([w, r]) => `${fmt(w)}×${r}`)
+      return `${sets.join(', ')} lb`
+    }
     case 'bodyweight':
       return reps.length ? `${reps.join(', ')} reps` : 'no sets'
     case 'cardio': {
@@ -55,9 +83,7 @@ export function previousLog(workouts: WorkoutLog[], exerciseId: string, beforeDa
 export function bestWeightBefore(workouts: WorkoutLog[], exerciseId: string, beforeDate: string): number {
   let best = 0
   for (const w of workouts) {
-    if (w.exerciseId === exerciseId && w.date < beforeDate && loggedReps(w).length && (w.weight ?? 0) > best) {
-      best = w.weight ?? 0
-    }
+    if (w.exerciseId === exerciseId && w.date < beforeDate) best = Math.max(best, topWeight(w))
   }
   return best
 }
@@ -77,11 +103,12 @@ export function summarize(logs: WorkoutLog[], exercises: Map<string, Exercise>):
     const ex = exercises.get(log.exerciseId)
     if (!ex || !hasData(log)) continue
     s.exercises++
-    const reps = loggedReps(log)
-    s.sets += reps.length
-    const total = reps.reduce((a, b) => a + b, 0)
-    s.reps += total
-    if (ex.type === 'weight') s.volume += (log.weight ?? 0) * total
+    const sets = loggedSets(log)
+    s.sets += sets.length
+    for (const [w, r] of sets) {
+      s.reps += r
+      if (ex.type === 'weight') s.volume += w * r
+    }
     s.minutes += log.minutes ?? 0
     s.miles += log.miles ?? 0
   }
@@ -129,6 +156,7 @@ export function draftLog(workouts: WorkoutLog[], date: string, exercise: Pick<Ex
     createdAt: new Date().toISOString(),
     reps: Array.from({ length: sets }, () => null),
     ...(exercise.type === 'weight' ? { weight: prev?.weight ?? 0 } : {}),
+    ...(exercise.type === 'weight' && prev?.setWeights ? { setWeights: [...prev.setWeights] } : {}),
   }
 }
 

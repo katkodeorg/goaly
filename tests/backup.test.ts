@@ -143,3 +143,26 @@ test('exercise library has unique names', async () => {
     assert.ok(libraryEntry(n), n)
   }
 })
+
+test('per-set weights parse, pad to the set count, and drive volume and PRs', async () => {
+  const { summarize, bestWeightBefore, formatLog } = await import('../src/lib/workouts')
+  const store = parseBackup(
+    JSON.stringify({
+      version: 2,
+      goals: [],
+      entries: [],
+      exercises: [{ id: 'b', name: 'Bench press', type: 'weight' }],
+      workouts: [
+        { id: 'w1', date: '2026-11-05', exerciseId: 'b', weight: 135, setWeights: [135, 125, 'x'], reps: [10, 8, 6, null] },
+        { id: 'w2', date: '2026-11-06', exerciseId: 'b', weight: 100, reps: [5] },
+      ],
+    }),
+  )
+  const log = store.workouts[0]
+  assert.deepEqual(log.setWeights, [135, 125, 135, 135])
+  assert.deepEqual(parseBackup(serializeBackup(store)), store)
+  const ex = new Map(store.exercises.map((e) => [e.id, e]))
+  assert.equal(summarize([log], ex).volume, 135 * 10 + 125 * 8 + 135 * 6)
+  assert.equal(formatLog(log, 'weight'), '135×10, 125×8, 135×6 lb')
+  assert.equal(bestWeightBefore(store.workouts, 'b', '2026-11-07'), 135)
+})

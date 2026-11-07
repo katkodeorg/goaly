@@ -1,5 +1,5 @@
 import { format } from 'date-fns'
-import { Copy, MoreHorizontal, Pencil, Plus, Trash2, Trophy, X } from 'lucide-react'
+import { Copy, Equal, Minus, MoreHorizontal, Pencil, Plus, Trash2, TrendingDown, Trophy, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -11,7 +11,7 @@ import {
 import type { StoreApi } from '@/hooks/useStore'
 import { fromKey } from '@/lib/dates'
 import { EXERCISE_TYPE_LABEL, type Exercise, type WorkoutLog } from '@/lib/types'
-import { bestWeightBefore, formatLog, loggedReps, maxReps, previousLog } from '@/lib/workouts'
+import { bestWeightBefore, fmt, formatLog, loggedReps, maxReps, previousLog, setWeight, topWeight } from '@/lib/workouts'
 import { RepPicker } from './RepPicker'
 import { SliderField } from './SliderField'
 
@@ -35,17 +35,51 @@ export function ExerciseCard({ log, exercise, api, inPlan, onUpdate, onRemove, o
   const workouts = api.store.workouts
   const prev = previousLog(workouts, exercise.id, log.date)
   const best = exercise.type === 'weight' ? bestWeightBefore(workouts, exercise.id, log.date) : 0
-  const isPR = exercise.type === 'weight' && best > 0 && (log.weight ?? 0) > best && loggedReps(log).length > 0
+  const isPR = exercise.type === 'weight' && best > 0 && topWeight(log) > best
+  const perSet = exercise.type === 'weight' && !!log.setWeights
   const weightMax = Math.max(400, Math.ceil(((log.weight ?? 0) * 1.25) / 50) * 50)
 
   const setReps = (i: number, value: number | null) =>
     onUpdate({ reps: log.reps.map((r, j) => (j === i ? value : r)) })
-  const addSet = () => onUpdate({ reps: [...log.reps, null] })
-  const removeSet = (i: number) => onUpdate({ reps: log.reps.filter((_, j) => j !== i) })
+  const addSet = () =>
+    onUpdate({
+      reps: [...log.reps, null],
+      ...(log.setWeights ? { setWeights: [...log.setWeights, setWeight(log, log.reps.length - 1)] } : {}),
+    })
+  const removeSet = (i: number) => {
+    const setWeights = log.setWeights?.filter((_, j) => j !== i)
+    onUpdate({
+      reps: log.reps.filter((_, j) => j !== i),
+      ...(setWeights ? { setWeights, weight: setWeights.length ? Math.max(...setWeights) : log.weight } : {}),
+    })
+  }
   const copyLast = () => {
     if (!prev) return
-    onUpdate({ reps: [...prev.reps], weight: prev.weight, minutes: prev.minutes, miles: prev.miles })
+    onUpdate({
+      reps: [...prev.reps],
+      weight: prev.weight,
+      setWeights: prev.setWeights ? [...prev.setWeights] : undefined,
+      minutes: prev.minutes,
+      miles: prev.miles,
+    })
   }
+
+  // With weight per set, the slider moves every set by the same amount so the drop pattern is kept.
+  const setMainWeight = (weight: number) => {
+    if (!log.setWeights) return onUpdate({ weight })
+    const delta = weight - (log.weight ?? 0)
+    onUpdate({ weight, setWeights: log.setWeights.map((w) => Math.max(0, w + delta)) })
+  }
+  // Changing one set also changes the later sets that had the same weight, so a drop carries on.
+  const changeSetWeight = (i: number, value: number) => {
+    const old = log.setWeights ?? log.reps.map(() => log.weight ?? 0)
+    const setWeights = old.map((w, j) => (j === i || (j > i && w === old[i]) ? value : w))
+    onUpdate({ setWeights, weight: Math.max(...setWeights) })
+  }
+  const togglePerSet = () =>
+    perSet
+      ? onUpdate({ setWeights: undefined, weight: log.setWeights![0] ?? log.weight })
+      : onUpdate({ setWeights: log.reps.map(() => log.weight ?? 0) })
   const nothingLogged = loggedReps(log).length === 0 && !log.minutes && !log.miles
 
   return (
@@ -91,13 +125,13 @@ export function ExerciseCard({ log, exercise, api, inPlan, onUpdate, onRemove, o
 
       {exercise.type === 'weight' && (
         <SliderField
-          label="Weight"
+          label={perSet ? 'Top set' : 'Weight'}
           unit="lb"
           value={log.weight ?? 0}
           max={weightMax}
           step={5}
           nudge={2.5}
-          onChange={(weight) => onUpdate({ weight })}
+          onChange={setMainWeight}
           badge={
             isPR ? (
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400">
@@ -139,13 +173,23 @@ export function ExerciseCard({ log, exercise, api, inPlan, onUpdate, onRemove, o
               <span className="flex h-9 w-4 shrink-0 items-center justify-center font-mono text-[11px] text-muted-foreground sm:h-8 sm:w-5">
                 {i + 1}
               </span>
-              <RepPicker
-                value={r}
-                max={maxReps(exercise.type)}
-                hint={prev?.reps[i] ?? null}
-                onChange={(v) => setReps(i, v)}
-                label={`Set ${i + 1} reps`}
-              />
+              <div className="min-w-0 flex-1 space-y-1.5">
+                {perSet && (
+                  <SetWeight
+                    value={setWeight(log, i)}
+                    label={`Set ${i + 1} weight`}
+                    hint={prev ? setWeight(prev, i) : undefined}
+                    onChange={(v) => changeSetWeight(i, v)}
+                  />
+                )}
+                <RepPicker
+                  value={r}
+                  max={maxReps(exercise.type)}
+                  hint={prev?.reps[i] ?? null}
+                  onChange={(v) => setReps(i, v)}
+                  label={`Set ${i + 1} reps`}
+                />
+              </div>
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -157,13 +201,60 @@ export function ExerciseCard({ log, exercise, api, inPlan, onUpdate, onRemove, o
               </Button>
             </div>
           ))}
-          {log.reps.length < MAX_SETS && (
-            <Button variant="ghost" size="sm" onClick={addSet} className="ml-6 text-muted-foreground">
-              <Plus /> Add set
-            </Button>
-          )}
+          <div className="ml-4 flex flex-wrap items-center gap-1 sm:ml-5">
+            {log.reps.length < MAX_SETS && (
+              <Button variant="ghost" size="sm" onClick={addSet} className="text-muted-foreground">
+                <Plus /> Add set
+              </Button>
+            )}
+            {exercise.type === 'weight' && log.reps.length > 1 && (
+              <Button variant="ghost" size="sm" onClick={togglePerSet} className="text-muted-foreground">
+                {perSet ? <Equal /> : <TrendingDown />} {perSet ? 'Same weight every set' : 'Change weight per set'}
+              </Button>
+            )}
+          </div>
         </div>
       )}
     </article>
+  )
+}
+
+/** Compact − weight + control for one set. Steps of 5 lb; the number can also be typed. */
+function SetWeight({
+  value,
+  label,
+  hint,
+  onChange,
+}: {
+  value: number
+  label: string
+  hint?: number
+  onChange: (value: number) => void
+}) {
+  const set = (v: number) => onChange(Math.min(2000, Math.max(0, Math.round(v * 100) / 100)))
+  return (
+    <div className="flex items-center gap-1.5">
+      <Button variant="outline" size="icon-xs" aria-label={`Decrease ${label} by 5`} onClick={() => set(value - 5)}>
+        <Minus />
+      </Button>
+      <input
+        type="number"
+        inputMode="decimal"
+        min={0}
+        step={2.5}
+        aria-label={label}
+        value={fmt(value)}
+        onChange={(e) => e.target.value !== '' && set(Number(e.target.value))}
+        onFocus={(e) => e.currentTarget.select()}
+        className="h-7 w-16 rounded-md border bg-transparent px-1.5 text-center font-mono text-sm font-semibold tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring/50 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+      />
+      <Button variant="outline" size="icon-xs" aria-label={`Increase ${label} by 5`} onClick={() => set(value + 5)}>
+        <Plus />
+      </Button>
+      <span className="text-xs text-muted-foreground">lb</span>
+      {hint !== undefined && hint !== value && (
+        <span className="ml-auto text-[11px] text-muted-foreground">last {fmt(hint)}</span>
+      )}
+    </div>
   )
 }

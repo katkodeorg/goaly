@@ -301,6 +301,7 @@ export function useStore() {
           createdAt: new Date(base + i).toISOString(),
           reps: w.reps.map(() => null),
           ...(w.weight !== undefined ? { weight: w.weight } : {}),
+          ...(w.setWeights ? { setWeights: [...w.setWeights] } : {}),
         }))
         dispatch({ type: 'addLogs', logs })
       },

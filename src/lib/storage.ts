@@ -86,7 +86,7 @@ function optNumber(v: unknown, max: number): number | undefined {
 
 function parseWorkout(v: unknown, exerciseIds: Set<string>): WorkoutLog | null {
   if (!isRecord(v)) throw new Error('Workout log is not an object')
-  const { id, date, exerciseId, createdAt, weight, reps, minutes, miles, skipped } = v
+  const { id, date, exerciseId, createdAt, weight, setWeights, reps, minutes, miles, skipped } = v
   if (typeof exerciseId !== 'string' || !exerciseIds.has(exerciseId)) return null
   if (typeof id !== 'string' || !id) throw new Error('Workout log is missing an id')
   if (typeof date !== 'string' || !DATE_RE.test(date)) throw new Error(`Workout log has invalid date "${String(date)}"`)
@@ -106,6 +106,10 @@ function parseWorkout(v: unknown, exerciseIds: Set<string>): WorkoutLog | null {
   if (w !== undefined) log.weight = w
   if (m !== undefined) log.minutes = m
   if (mi !== undefined) log.miles = mi
+  if (Array.isArray(setWeights) && repList.length) {
+    // Keep one weight per set; fill any gaps from the main weight.
+    log.setWeights = repList.map((_, i) => optNumber(setWeights[i], 2000) ?? log.weight ?? 0)
+  }
   if (skipped === true) log.skipped = true
   return log
 }
