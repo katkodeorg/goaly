@@ -42,13 +42,43 @@ export interface Entry {
   value: number
 }
 
-export interface Store {
-  version: 1
-  goals: Goal[]
-  entries: Entry[]
+export type ExerciseType = 'weight' | 'bodyweight' | 'cardio'
+
+export const EXERCISE_TYPE_LABEL: Record<ExerciseType, string> = {
+  weight: 'Weights',
+  bodyweight: 'Bodyweight',
+  cardio: 'Cardio',
 }
 
-export const EMPTY_STORE: Store = { version: 1, goals: [], entries: [] }
+export interface Exercise {
+  id: string
+  name: string
+  type: ExerciseType
+  createdAt: string
+}
+
+/** One exercise done on one day. Weight is in lb, duration in minutes, distance in miles. */
+export interface WorkoutLog {
+  id: string
+  date: string
+  exerciseId: string
+  createdAt: string
+  weight?: number
+  /** Reps per set; null means the set hasn't been logged yet. */
+  reps: (number | null)[]
+  minutes?: number
+  miles?: number
+}
+
+export interface Store {
+  version: 2
+  goals: Goal[]
+  entries: Entry[]
+  exercises: Exercise[]
+  workouts: WorkoutLog[]
+}
+
+export const EMPTY_STORE: Store = { version: 2, goals: [], entries: [], exercises: [], workouts: [] }
 
 export const CADENCE_LABEL: Record<Cadence, string> = {
   daily: 'Daily',

@@ -1,4 +1,4 @@
-import { COLOR_KEYS, EMPTY_STORE, type Entry, type Goal, type Store } from './types'
+import { COLOR_KEYS, EMPTY_STORE, type Entry, type Exercise, type Goal, type Store, type WorkoutLog } from './types'
 
 export const STORAGE_KEY = 'goaly:v1'
 
@@ -54,6 +54,52 @@ function parseEntry(v: unknown, goalIds: Set<string>): Entry | null {
   return { goalId, date, value: Math.min(10, Math.max(1, Math.round(value))) }
 }
 
+const EXERCISE_TYPES = new Set(['weight', 'bodyweight', 'cardio'])
+
+function parseExercise(v: unknown): Exercise {
+  if (!isRecord(v)) throw new Error('Exercise is not an object')
+  const { id, name, type, createdAt } = v
+  if (typeof id !== 'string' || !id) throw new Error('Exercise is missing an id')
+  if (typeof name !== 'string' || !name.trim()) throw new Error(`Exercise ${id} has no name`)
+  if (typeof type !== 'string' || !EXERCISE_TYPES.has(type)) throw new Error(`Exercise "${name}" has an invalid type`)
+  return {
+    id,
+    name,
+    type: type as Exercise['type'],
+    createdAt: typeof createdAt === 'string' ? createdAt : new Date().toISOString(),
+  }
+}
+
+function optNumber(v: unknown, max: number): number | undefined {
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < 0) return undefined
+  return Math.min(v, max)
+}
+
+function parseWorkout(v: unknown, exerciseIds: Set<string>): WorkoutLog | null {
+  if (!isRecord(v)) throw new Error('Workout log is not an object')
+  const { id, date, exerciseId, createdAt, weight, reps, minutes, miles } = v
+  if (typeof exerciseId !== 'string' || !exerciseIds.has(exerciseId)) return null
+  if (typeof id !== 'string' || !id) throw new Error('Workout log is missing an id')
+  if (typeof date !== 'string' || !DATE_RE.test(date)) throw new Error(`Workout log has invalid date "${String(date)}"`)
+  const repList = Array.isArray(reps)
+    ? reps.slice(0, 20).map((r) => (typeof r === 'number' && Number.isFinite(r) && r > 0 ? Math.min(100, Math.round(r)) : null))
+    : []
+  const log: WorkoutLog = {
+    id,
+    date,
+    exerciseId,
+    createdAt: typeof createdAt === 'string' ? createdAt : new Date().toISOString(),
+    reps: repList,
+  }
+  const w = optNumber(weight, 2000)
+  const m = optNumber(minutes, 1440)
+  const mi = optNumber(miles, 500)
+  if (w !== undefined) log.weight = w
+  if (m !== undefined) log.minutes = m
+  if (mi !== undefined) log.miles = mi
+  return log
+}
+
 /** Parses and validates a backup JSON string. Throws a readable Error on bad input. */
 export function parseBackup(raw: string): Store {
   let data: unknown
@@ -63,7 +109,7 @@ export function parseBackup(raw: string): Store {
     throw new Error('File is not valid JSON')
   }
   if (!isRecord(data)) throw new Error('Backup must be a JSON object')
-  if (data.version !== 1) throw new Error(`Unsupported backup version: ${String(data.version)}`)
+  if (data.version !== 1 && data.version !== 2) throw new Error(`Unsupported backup version: ${String(data.version)}`)
   if (!Array.isArray(data.goals) || !Array.isArray(data.entries))
     throw new Error('Backup must contain "goals" and "entries" arrays')
 
@@ -81,7 +127,22 @@ export function parseBackup(raw: string): Store {
     seen.add(k)
     entries.push(parsed)
   }
-  return { version: 1, goals, entries }
+
+  // Version 1 backups predate workouts.
+  const exercises = Array.isArray(data.exercises) ? data.exercises.map(parseExercise) : []
+  const exerciseIds = new Set(exercises.map((e) => e.id))
+  if (exerciseIds.size !== exercises.length) throw new Error('Backup contains duplicate exercise ids')
+  const seenLogs = new Set<string>()
+  const workouts: WorkoutLog[] = []
+  for (const w of Array.isArray(data.workouts) ? data.workouts : []) {
+    const parsed = parseWorkout(w, exerciseIds)
+    if (!parsed) continue
+    const k = `${parsed.exerciseId}:${parsed.date}`
+    if (seenLogs.has(k)) continue
+    seenLogs.add(k)
+    workouts.push(parsed)
+  }
+  return { version: 2, goals, entries, exercises, workouts }
 }
 
 export function serializeBackup(store: Store): string {
@@ -110,7 +171,18 @@ export function mergeStores(current: Store, incoming: Store): Store {
   for (const g of incoming.goals) goals.set(g.id, g)
   const entries = new Map(current.entries.map((e) => [`${e.goalId}:${e.date}`, e]))
   for (const e of incoming.entries) entries.set(`${e.goalId}:${e.date}`, e)
-  return { version: 1, goals: [...goals.values()], entries: [...entries.values()] }
+  const exercises = new Map(current.exercises.map((e) => [e.id, e]))
+  for (const e of incoming.exercises) exercises.set(e.id, e)
+  // One log per exercise per day; the incoming log wins.
+  const workouts = new Map(current.workouts.map((w) => [`${w.exerciseId}:${w.date}`, w]))
+  for (const w of incoming.workouts) workouts.set(`${w.exerciseId}:${w.date}`, w)
+  return {
+    version: 2,
+    goals: [...goals.values()],
+    entries: [...entries.values()],
+    exercises: [...exercises.values()],
+    workouts: [...workouts.values()],
+  }
 }
 
 export function newId(): string {

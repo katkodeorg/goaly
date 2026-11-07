@@ -58,7 +58,7 @@ export function BackupMenu({ api, today, onNotice }: Props) {
     setPending(null)
   }
 
-  const count = api.store.entries.length
+  const count = api.store.entries.length + api.store.workouts.length
 
   return (
     <>
@@ -100,7 +100,8 @@ export function BackupMenu({ api, today, onNotice }: Props) {
           <AlertDialogHeader>
             <AlertDialogTitle>Restore backup</AlertDialogTitle>
             <AlertDialogDescription>
-              The file contains {pending?.goals.length ?? 0} goals and {pending?.entries.length ?? 0} logs. Merge keeps
+              The file contains {pending?.goals.length ?? 0} goals, {pending?.entries.length ?? 0} goal logs and{' '}
+              {pending?.workouts.length ?? 0} exercise logs. Merge keeps
               what you have here and adds the backup on top. Replace discards everything in this browser first.
             </AlertDialogDescription>
           </AlertDialogHeader>

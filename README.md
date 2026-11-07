@@ -9,6 +9,7 @@ Live: https://katkodeorg.github.io/goaly/
 - **Daily, weekly and monthly goals.** Each section resets with its period: a weekly goal marked on Tuesday stays done until the week ends, then clears.
 - **Tick or effort.** Log a goal as done/not done, or as an effort level from 1 to 10.
 - **Calendar.** Coloured dots per goal on every day, or filter to one goal for a heatmap. Click any past day to log something you forgot.
+- **Workouts.** Log exercises per day. Weights get a lb slider, prefilled from last time, and each set is a row of rep numbers: tap 10, 8, 8 and three sets are logged. Bodyweight exercises use reps only, cardio uses minutes and miles sliders. Shows last session, flags new weight PRs, and repeats a past workout in one tap.
 - **Search and ordering.** Search goals by name (press `/`), and sort by recently used, A to Z, or newest.
 - **Streaks** for consecutive periods, and progress per section.
 - **Works on phones.** Responsive layout with touch-sized controls.
@@ -22,6 +23,7 @@ Live: https://katkodeorg.github.io/goaly/
 npm install
 npm run dev      # http://localhost:5173/goaly/
 npm run build    # builds into docs/ for GitHub Pages
+npm test         # backup format tests
 ```
 
 Built with Vite, React, TypeScript, Tailwind CSS v4 and [shadcn/ui](https://ui.shadcn.com).
@@ -34,10 +36,14 @@ GitHub Pages serves the `docs/` folder on `main`. Run `npm run build`, commit th
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "goals": [{ "id": "…", "title": "Go to the gym", "cadence": "daily", "kind": "check", "color": "teal", "createdAt": "…" }],
-  "entries": [{ "goalId": "…", "date": "2026-10-19", "value": 1 }]
+  "entries": [{ "goalId": "…", "date": "2026-10-19", "value": 1 }],
+  "exercises": [{ "id": "…", "name": "Bench press", "type": "weight", "createdAt": "…" }],
+  "workouts": [{ "id": "…", "date": "2026-11-06", "exerciseId": "…", "createdAt": "…", "weight": 135, "reps": [10, 8, 8] }]
 }
 ```
+
+Exercise `type` is `weight`, `bodyweight` or `cardio`. Workout `weight` is in lb. Cardio logs use `minutes` and `miles`. Version 1 backups, from before workouts existed, still restore.
 
 `cadence` is `daily`, `weekly` or `monthly`. `kind` is `check` (value is always 1) or `effort` (value 1–10).

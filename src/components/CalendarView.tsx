@@ -12,7 +12,7 @@ import {
   startOfWeek,
   subMonths,
 } from 'date-fns'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Dumbbell } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { StoreApi } from '@/hooks/useStore'
@@ -20,19 +20,24 @@ import { WEEK_OPTS, toKey } from '@/lib/dates'
 import { COLORS, type Goal } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { GoalRow } from './GoalRow'
+import { formatLog, hasData } from '@/lib/workouts'
 
 interface Props {
   api: StoreApi
   today: Date
+  onOpenWorkout: (date: Date) => void
 }
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
-export function CalendarView({ api, today }: Props) {
+export function CalendarView({ api, today, onOpenWorkout }: Props) {
   const [month, setMonth] = useState(() => startOfMonth(today))
   const [selected, setSelected] = useState<Date>(today)
   const [filter, setFilter] = useState<string>('all')
 
+  const exercisesById = useMemo(() => new Map(api.store.exercises.map((e) => [e.id, e])), [api.store.exercises])
+  const workoutLogs = (key: string) =>
+    (api.workoutsByDate.get(key) ?? []).filter((l) => hasData(l) && exercisesById.has(l.exerciseId))
   const goalsById = useMemo(() => new Map(api.store.goals.map((g) => [g.id, g])), [api.store.goals])
   const filterGoal = filter === 'all' ? undefined : goalsById.get(filter)
 
@@ -48,13 +53,17 @@ export function CalendarView({ api, today }: Props) {
   const monthStats = useMemo(() => {
     let daysActive = 0
     let logs = 0
+    let workouts = 0
     for (const d of eachDayOfInterval({ start: startOfMonth(month), end: endOfMonth(month) })) {
-      const list = (api.byDate.get(toKey(d)) ?? []).filter((e) => !filterGoal || e.goalId === filterGoal.id)
-      if (list.length) daysActive++
+      const key = toKey(d)
+      const list = (api.byDate.get(key) ?? []).filter((e) => !filterGoal || e.goalId === filterGoal.id)
+      const worked = !filterGoal && (api.workoutsByDate.get(key) ?? []).some(hasData)
+      if (list.length || worked) daysActive++
+      if (worked) workouts++
       logs += list.length
     }
-    return { daysActive, logs }
-  }, [api.byDate, month, filterGoal])
+    return { daysActive, logs, workouts }
+  }, [api.byDate, api.workoutsByDate, month, filterGoal])
 
   const selectedEntries = api.byDate.get(toKey(selected)) ?? []
   const visibleGoals = api.store.goals.filter((g) => !g.archived || selectedEntries.some((e) => e.goalId === g.id))
@@ -144,6 +153,15 @@ export function CalendarView({ api, today }: Props) {
                     : undefined
                 }
               >
+                {workoutLogs(key).length > 0 && (
+                  <Dumbbell
+                    aria-label="Workout logged"
+                    className={cn(
+                      'absolute top-1.5 right-1.5 size-3',
+                      filterGoal && heat > 0.55 ? 'text-white/90' : 'text-muted-foreground',
+                    )}
+                  />
+                )}
                 <span
                   className={cn(
                     'font-mono text-xs tabular-nums leading-none',
@@ -183,8 +201,9 @@ export function CalendarView({ api, today }: Props) {
         </div>
 
         <p className="px-1 text-xs text-muted-foreground">
-          {monthStats.daysActive} active {monthStats.daysActive === 1 ? 'day' : 'days'} · {monthStats.logs}{' '}
-          {monthStats.logs === 1 ? 'log' : 'logs'} this month
+          {monthStats.daysActive} active {monthStats.daysActive === 1 ? 'day' : 'days'} · {monthStats.logs} goal{' '}
+          {monthStats.logs === 1 ? 'log' : 'logs'}
+          {!filterGoal && ` · ${monthStats.workouts} ${monthStats.workouts === 1 ? 'workout' : 'workouts'}`} this month
           {filterGoal ? ` for “${filterGoal.title}”` : ''}
         </p>
       </section>
@@ -209,6 +228,33 @@ export function CalendarView({ api, today }: Props) {
           <p className="px-2 text-xs text-muted-foreground">
             Forgot to log something? You can mark any past day here.
           </p>
+        )}
+        {!isFuture && (
+          <div className="space-y-2 border-t pt-4">
+            <div className="flex items-center justify-between px-2">
+              <h3 className="flex items-center gap-1.5 text-sm font-semibold tracking-tight">
+                <Dumbbell className="size-3.5" /> Workout
+              </h3>
+              <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={() => onOpenWorkout(selected)}>
+                {workoutLogs(toKey(selected)).length ? 'Open' : 'Log workout'}
+              </Button>
+            </div>
+            {workoutLogs(toKey(selected)).length === 0 ? (
+              <p className="px-2 text-sm text-muted-foreground">Nothing logged.</p>
+            ) : (
+              <ul className="space-y-1 px-2">
+                {workoutLogs(toKey(selected)).map((l) => {
+                  const ex = exercisesById.get(l.exerciseId)!
+                  return (
+                    <li key={l.id} className="flex items-baseline justify-between gap-3 text-sm">
+                      <span className="truncate font-medium">{ex.name}</span>
+                      <span className="shrink-0 font-mono text-xs text-muted-foreground">{formatLog(l, ex.type)}</span>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
         )}
       </aside>
     </div>
